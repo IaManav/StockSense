@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, render_template
 
 from app.config import secret_key
 from app.database import init_app
@@ -16,9 +16,7 @@ def create_app():
 
     @app.get("/")
     def root():
-        return {
-            "message": "StockSense API is running"
-        }
+        return render_template("index.html")
 
     @app.get("/health")
     def health():

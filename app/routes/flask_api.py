@@ -316,9 +316,21 @@ def create_receipt():
     return create_operation(Receipt, payload())
 
 
+@api_bp.get("/receipts")
+def list_receipts():
+    query = select(Receipt).order_by(Receipt.id.desc())
+    return jsonify(items=[data(item) for item in db().scalars(query).all()])
+
+
 @api_bp.post("/deliveries")
 def create_delivery():
     return create_operation(Delivery, payload())
+
+
+@api_bp.get("/deliveries")
+def list_deliveries():
+    query = select(Delivery).order_by(Delivery.id.desc())
+    return jsonify(items=[data(item) for item in db().scalars(query).all()])
 
 
 def add_operation_item(operation_model: type, item_model: type, operation_id: UUID, body: dict[str, Any]):
@@ -412,6 +424,12 @@ def create_transfer():
     return jsonify(data(transfer)), 201
 
 
+@api_bp.get("/transfers")
+def list_transfers():
+    query = select(StockTransfer).order_by(StockTransfer.id.desc())
+    return jsonify(items=[data(item) for item in db().scalars(query).all()])
+
+
 @api_bp.post("/transfers/<uuid:transfer_id>/items")
 def add_transfer_item(transfer_id: UUID):
     body = payload()
@@ -466,6 +484,12 @@ def create_adjustment():
     db().add(adjustment)
     commit()
     return jsonify(data(adjustment)), 201
+
+
+@api_bp.get("/adjustments")
+def list_adjustments():
+    query = select(StockAdjustment).order_by(StockAdjustment.id.desc())
+    return jsonify(items=[data(item) for item in db().scalars(query).all()])
 
 
 @api_bp.post("/adjustments/<uuid:adjustment_id>/items")

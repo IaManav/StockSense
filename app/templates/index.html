@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StockSense - Inventory</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><span class="brand-mark">S</span><span>StockSense</span></div>
+      <div class="workspace-label">INVENTORY CONTROL</div>
+      <nav class="nav-list" aria-label="Primary navigation">
+        <button class="nav-item active" data-view="dashboard"><span class="nav-icon">▦</span>Dashboard</button>
+        <button class="nav-item" data-view="products"><span class="nav-icon">□</span>Products</button>
+        <div class="nav-section">Operations</div>
+        <button class="nav-item" data-view="receipts"><span class="nav-icon">↓</span>Receipts</button>
+        <button class="nav-item" data-view="deliveries"><span class="nav-icon">↑</span>Deliveries</button>
+        <button class="nav-item" data-view="transfers"><span class="nav-icon">⇄</span>Internal transfers</button>
+        <button class="nav-item" data-view="adjustments"><span class="nav-icon">±</span>Adjustments</button>
+        <button class="nav-item" data-view="ledger"><span class="nav-icon">≡</span>Move history</button>
+        <div class="nav-section">Configuration</div>
+        <button class="nav-item" data-view="warehouses"><span class="nav-icon">⌂</span>Warehouses</button>
+        <button class="nav-item" data-view="profile"><span class="nav-icon">○</span>Profile</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-chip"><span class="avatar" id="user-avatar">?</span><span class="user-meta"><strong id="user-name">Not signed in</strong><small id="user-role">Connect your account</small></span></div>
+        <button class="logout-button" id="logout-button" title="Log out">↗</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobile-menu" aria-label="Open navigation">☰</button>
+        <div><div class="breadcrumbs">StockSense <span>/</span> <strong id="breadcrumb">Dashboard</strong></div><h1 id="page-title">Dashboard</h1></div>
+        <div class="topbar-actions"><span class="connection-dot" id="connection-status">Checking database</span><button class="button button-dark" data-action="quick-receipt">+ New receipt</button></div>
+      </header>
+      <div class="notice" id="notice" role="status"></div>
+      <section class="page" id="page"></section>
+    </main>
+  </div>
+
+  <dialog id="auth-dialog" class="modal">
+    <div class="modal-head"><div><div class="eyebrow">ACCOUNT</div><h2 id="auth-title">Sign in</h2></div><button class="icon-button" data-close-dialog>×</button></div>
+    <form id="auth-form" class="form-grid">
+      <label>Login ID<input name="login_id" required minlength="6" maxlength="12"></label>
+      <label class="signup-only">Email<input name="email" type="email"></label>
+      <label>Password<input name="password" type="password" required></label>
+      <label class="signup-only">Confirm password<input name="confirm_password" type="password"></label>
+      <div class="form-actions"><button type="button" class="button button-quiet" id="auth-switch">Create account</button><button class="button button-dark" type="submit">Continue</button></div>
+    </form>
+  </dialog>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

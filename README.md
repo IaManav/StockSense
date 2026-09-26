@@ -30,6 +30,10 @@ Alembic migrations.
    python run.py
    ```
 
-The API is available at `http://localhost:5000`; health checks are at `/health`.
+The web interface is available at `http://localhost:5000`; health checks are at
+`/health`, and the JSON API is mounted under `/api`. The interface is a
+server-rendered Flask shell with a lightweight vanilla JavaScript client, so no
+separate frontend build step or Node installation is required.
+
 `DATABASE_URL` must be a PostgreSQL SQLAlchemy URL. See `AGENTS.md` for the
 project conventions and integration points.
