@@ -88,7 +88,7 @@ async function renderLedger() {
 async function renderOperations(view) {
   const labels = { receipts: ["Receipts", "Incoming stock from vendors", "receive_from", "Receive from"], deliveries: ["Deliveries", "Outgoing stock for customer shipments", "delivery_address", "Delivery address"], transfers: ["Internal transfers", "Move stock between warehouse locations", "", ""], adjustments: ["Adjustments", "Reconcile recorded quantities with physical counts", "reason", "Reason"] };
   const [heading, description] = labels[view]; const result = await api(`/${view}`); state.operations = result.items || [];
-  const rows = state.operations.map((item) => `<tr><td><strong>${esc(item.reference)}</strong></td><td>${esc(item[labels[view][2]] || "-")}</td><td>${esc(item.schedule_date || "-")}</td><td>${status(item.status)}</td><td><button class="button button-quiet" data-id="${esc(item.id)}">Open →</button></td></tr>`);
+  const rows = state.operations.map((item) => { const nextAction = item.status === "DRAFT" && view !== "adjustments" ? "ready" : item.status === "READY" || (item.status === "DRAFT" && view === "adjustments") ? "validate" : ""; const actionLabel = nextAction === "ready" ? "Mark ready" : nextAction === "validate" ? "Validate" : "-"; return `<tr><td><strong>${esc(item.reference)}</strong></td><td>${esc(item[labels[view][2]] || "-")}</td><td>${esc(item.schedule_date || "-")}</td><td>${status(item.status)}</td><td>${nextAction ? `<button class="button button-quiet" data-op-action="${nextAction}" data-op-type="${view}" data-id="${esc(item.id)}">${actionLabel} →</button>` : `<span class="muted">Complete</span>`}</td></tr>`; });
   const detailColumn = view === "transfers" ? "Route" : view === "adjustments" ? "Reason" : view === "deliveries" ? "Address" : "Supplier";
   $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">${heading}</div><div class="muted">${description}</div></div><button class="button button-dark" data-action="new-${view}">+ New ${heading.slice(0, -1).toLowerCase()}</button></div><section class="panel">${table(["Reference",detailColumn,"Schedule date","Status",""], rows, `No ${heading.toLowerCase()} yet.`)}</section>`;
 }
@@ -103,12 +103,45 @@ function formDialog(title, content, submit) { const dialog = document.createElem
 
 function openProductForm() { formDialog("New product", `<label>SKU / code<input name="sku" required></label><label>Product name<input name="name" required></label><label>Category<select name="category_id"><option value="">Uncategorised</option>${optionList(state.categories)}</select></label><label>Unit of measure<input name="unit" value="piece"></label><label>Unit cost<input name="unit_cost" type="number" min="0" step="0.01" value="0"></label><label>Reorder level<input name="reorder_level" type="number" min="0" step="0.001" value="0"></label><label class="wide">Description<textarea name="description"></textarea></label>`, async (data) => api("/products", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) })); }
 function openWarehouseForm() { formDialog("New warehouse", `<label>Warehouse name<input name="name" required></label><label>Short code<input name="short_code" required></label><label class="wide">Address<textarea name="address"></textarea></label>`, async (data) => api("/warehouses", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) })); }
-function openOperationForm(type) { const isReceipt = type === "receipts"; const isDelivery = type === "deliveries"; const fields = `<label>Reference<input name="reference" placeholder="WH/${isReceipt ? "IN" : "OUT"}/0001" required></label><label>Responsible user ID<input name="responsible_id" placeholder="UUID" required></label><label>Warehouse<select name="warehouse_id" required><option value="">Select warehouse</option>${optionList(state.warehouses)}</select></label><label>Schedule date<input name="schedule_date" type="date"></label><label class="wide">${isReceipt ? "Receive from" : isDelivery ? "Delivery address" : "Reason"}<input name="${isReceipt ? "receive_from" : isDelivery ? "delivery_address" : "reason"}"></label>`; formDialog(`New ${isReceipt ? "receipt" : isDelivery ? "delivery" : type.slice(0, -1)}`, fields, async (data) => api(`/${type}`, { method: "POST", body: JSON.stringify(Object.fromEntries(data)) })); }
+function openOperationForm(type) {
+  const isReceipt = type === "receipts";
+  const isDelivery = type === "deliveries";
+  const userId = state.user?.id || "";
+  let fields;
+  if (isReceipt || isDelivery) {
+    fields = `<label>Reference<input name="reference" placeholder="MAIN/${isReceipt ? "IN" : "OUT"}/0001" required></label><label>Responsible user ID<input name="responsible_id" value="${esc(userId)}" placeholder="UUID" required></label><label>Warehouse<select name="warehouse_id" required><option value="">Select warehouse</option>${optionList(state.warehouses)}</select></label><label>Schedule date<input name="schedule_date" type="date"></label><label>${isReceipt ? "Receive from" : "Delivery address"}<input name="${isReceipt ? "receive_from" : "delivery_address"}"></label><label>Product<select name="product_id" required><option value="">Select product</option>${optionList(state.products)}</select></label><label>Location<select name="location_id" required><option value="">Select location</option>${optionList(state.locations)}</select></label><label>Quantity<input name="quantity" type="number" min="0.001" step="0.001" required></label>`;
+  } else if (type === "transfers") {
+    fields = `<label>Reference<input name="reference" placeholder="MAIN/MOVE/0001" required></label><label>Responsible user ID<input name="responsible_id" value="${esc(userId)}" placeholder="UUID" required></label><label>From location<select name="from_location_id" required><option value="">Select source</option>${optionList(state.locations)}</select></label><label>To location<select name="to_location_id" required><option value="">Select destination</option>${optionList(state.locations)}</select></label><label>Product<select name="product_id" required><option value="">Select product</option>${optionList(state.products)}</select></label><label>Quantity<input name="quantity" type="number" min="0.001" step="0.001" required></label>`;
+  } else {
+    fields = `<label>Reference<input name="reference" placeholder="MAIN/ADJ/0001" required></label><label>Responsible user ID<input name="responsible_id" value="${esc(userId)}" placeholder="UUID" required></label><label>Warehouse<select name="warehouse_id" required><option value="">Select warehouse</option>${optionList(state.warehouses)}</select></label><label>Location<select name="location_id" required><option value="">Select location</option>${optionList(state.locations)}</select></label><label>Product<select name="product_id" required><option value="">Select product</option>${optionList(state.products)}</select></label><label>Counted quantity<input name="new_quantity" type="number" min="0" step="0.001" required></label><label class="wide">Reason<input name="reason"></label>`;
+  }
+  formDialog(`New ${isReceipt ? "receipt" : isDelivery ? "delivery" : type.slice(0, -1)}`, fields, async (data) => {
+    const values = Object.fromEntries(data);
+    const created = await api(`/${type}`, { method: "POST", body: JSON.stringify(values) });
+    if ((isReceipt || isDelivery) && values.product_id) await api(`/${type}/${created.id}/items`, { method: "POST", body: JSON.stringify({ product_id: values.product_id, location_id: values.location_id, quantity: values.quantity }) });
+    if (type === "transfers") await api(`/transfers/${created.id}/items`, { method: "POST", body: JSON.stringify({ product_id: values.product_id, quantity: values.quantity }) });
+    if (type === "adjustments") await api(`/adjustments/${created.id}/items`, { method: "POST", body: JSON.stringify({ product_id: values.product_id, new_quantity: values.new_quantity }) });
+    return created;
+  });
+}
 
 async function loadUser() { try { state.user = await api("/auth/me"); $("#user-name").textContent = state.user.login_id; $("#user-role").textContent = state.user.role; $("#user-avatar").textContent = state.user.login_id.slice(0, 1).toUpperCase(); $("#connection-status").textContent = "Database connected"; $("#connection-status").className = "connection-dot ok"; } catch { $("#connection-status").textContent = "Read-only mode"; $("#connection-status").className = "connection-dot"; } }
 
 document.addEventListener("click", async (event) => {
   const viewNode = event.target.closest("[data-view]"); if (viewNode) { render(viewNode.dataset.view); $("#sidebar").classList.remove("open"); return; }
+  const operationButton = event.target.closest("[data-op-action]");
+  if (operationButton) {
+    const { opAction, opType, id } = operationButton.dataset;
+    try {
+      const endpoint = opAction === "ready" ? `/${opType}/${id}/ready` : `/${opType}/${id}/validate`;
+      const body = opAction === "validate" ? { created_by: state.user?.id } : undefined;
+      if (opAction === "validate" && !state.user?.id) throw new Error("Sign in before validating an operation");
+      await api(endpoint, { method: "POST", ...(body ? { body: JSON.stringify(body) } : {}) });
+      notify(opAction === "ready" ? "Operation marked ready" : "Operation validated and stock updated");
+      render(opType);
+    } catch (error) { notify(error.message, "error"); }
+    return;
+  }
   const action = event.target.closest("[data-action]")?.dataset.action;
   if (action === "auth") return openDialog();
   if (action === "new-product") return openProductForm();

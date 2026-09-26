@@ -37,3 +37,40 @@ separate frontend build step or Node installation is required.
 
 `DATABASE_URL` must be a PostgreSQL SQLAlchemy URL. See `AGENTS.md` for the
 project conventions and integration points.
+
+## Load demo data
+
+After PostgreSQL is running and migrations are applied, load the repeatable
+demo dataset:
+
+```powershell
+python -m scripts.seed_demo
+```
+
+The seeder is safe to run more than once; it checks the demo references and
+unique fields before inserting records. Use these credentials in the web app:
+
+```text
+Login ID: demo01
+Password: Demo123!
+```
+
+The demo account includes a main warehouse, receiving/rack/production
+locations, three products, stock quantities, a completed receipt, a ready
+delivery, a ready internal transfer, a draft adjustment, and ledger entries.
+
+## Using the app
+
+1. Open `http://localhost:5000`.
+2. Sign in with the demo credentials, or create your own account.
+3. Use Dashboard for stock KPIs and quick actions.
+4. Use Products to search the catalogue and Stock by location to inspect free
+   quantities.
+5. Use Receipts for incoming goods, Deliveries for outgoing goods, Internal
+   transfers for warehouse movements, and Adjustments for physical counts.
+6. Use Move history to audit validated stock movements.
+7. Use Warehouses to configure warehouses and their locations.
+
+Operations follow the intended workflow: create a document, add its product
+lines, mark it Ready, then validate it. Validation is the point at which stock
+and the ledger are updated.
