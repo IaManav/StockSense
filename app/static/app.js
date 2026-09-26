@@ -1,4 +1,4 @@
-const state = { view: "dashboard", user: null, products: [], categories: [], warehouses: [], locations: [], operations: [] };
+const state = { view: "dashboard", user: null, products: [], categories: [], warehouses: [], locations: [], operations: [], operationLayout: {} };
 
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#039;"}[char]));
@@ -99,12 +99,43 @@ async function renderLedger() {
   $("#page").innerHTML = `<div class="page-toolbar"><div class="callout">Every validated receipt, delivery, transfer, and adjustment is recorded here. Incoming movements are shown in green; outgoing movements in red.</div></div><section class="panel">${table(["Reference","Product","From","To","Quantity","Movement"], rows, "No validated movements yet.")}</section>`;
 }
 
-async function renderOperations(view) {
+async function renderOperations(view, layout = state.operationLayout[view] || "list") {
+  state.operationLayout[view] = layout;
   const labels = { receipts: ["Receipts", "Incoming stock from vendors", "receive_from", "Receive from"], deliveries: ["Deliveries", "Outgoing stock for customer shipments", "delivery_address", "Delivery address"], transfers: ["Internal transfers", "Move stock between warehouse locations", "", ""], adjustments: ["Adjustments", "Reconcile recorded quantities with physical counts", "reason", "Reason"] };
   const [heading, description] = labels[view]; const result = await api(`/${view}`); state.operations = result.items || [];
-  const rows = state.operations.map((item) => { const nextAction = item.status === "DRAFT" && view !== "adjustments" ? "ready" : item.status === "READY" || (item.status === "DRAFT" && view === "adjustments") ? "validate" : ""; const actionLabel = nextAction === "ready" ? "Mark ready" : nextAction === "validate" ? "Validate" : "-"; return `<tr><td><strong>${esc(item.reference)}</strong></td><td>${esc(item[labels[view][2]] || "-")}</td><td>${esc(item.schedule_date || "-")}</td><td>${status(item.status)}</td><td>${nextAction ? `<button class="button button-quiet" data-op-action="${nextAction}" data-op-type="${view}" data-id="${esc(item.id)}">${actionLabel} →</button>` : `<span class="muted">Complete</span>`}</td></tr>`; });
-  const detailColumn = view === "transfers" ? "Route" : view === "adjustments" ? "Reason" : view === "deliveries" ? "Address" : "Supplier";
-  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">${heading}</div><div class="muted">${description}</div></div><button class="button button-dark" data-action="new-${view}">+ New ${heading.slice(0, -1).toLowerCase()}</button></div><section class="panel">${table(["Reference",detailColumn,"Schedule date","Status",""], rows, `No ${heading.toLowerCase()} yet.`)}</section>`;
+  const rows = state.operations.map((item) => {
+    const nextAction = item.status === "DRAFT" && view !== "adjustments" ? "ready" : item.status === "READY" || (item.status === "DRAFT" && view === "adjustments") ? "validate" : "";
+    const actionLabel = nextAction === "ready" ? "Mark ready" : nextAction === "validate" ? "Validate" : "";
+    const action = nextAction ? `<button class="button button-quiet" data-op-action="${nextAction}" data-op-type="${view}" data-id="${esc(item.id)}">${actionLabel} →</button>` : `<span class="muted">Complete</span>`;
+    if (view === "receipts") {
+      const warehouse = state.warehouses.find((entry) => entry.id === item.warehouse_id);
+      return `<tr class="receipt-row" data-receipt-id="${esc(item.id)}" data-search="${esc(`${item.reference} ${item.receive_from || ""} ${item.contact || ""}`)}"><td><strong>${esc(item.reference)}</strong></td><td>${esc(item.receive_from || "-")}</td><td>${esc(item.to_location || warehouse?.name || item.warehouse_id?.slice(0, 8) || "-")}</td><td>${esc(item.contact || item.responsible_id?.slice(0, 8) || "-")}</td><td>${esc(item.schedule_date || "-")}</td><td>${status(item.status)} ${action}</td></tr>`;
+    }
+    return `<tr><td><strong>${esc(item.reference)}</strong></td><td>${esc(item[labels[view][2]] || "-")}</td><td>${esc(item.schedule_date || "-")}</td><td>${status(item.status)}</td><td>${action}</td></tr>`;
+  });
+  const detailColumn = view === "transfers" ? "Route" : view === "adjustments" ? "Reason" : "Address";
+  const headers = view === "receipts" ? ["Reference", "From", "To", "Contact", "Schedule date", "Status"] : ["Reference", detailColumn, "Schedule date", "Status", ""];
+  const receiptCard = (item) => `<article class="kanban-card"><strong>${esc(item.reference)}</strong><span>${esc(item.receive_from || "-")}</span><span>${esc(item.to_location || "-")}</span><span>${esc(item.contact || "-")}</span><small>${esc(item.schedule_date || "-")}</small>${status(item.status)}</article>`;
+  const board = ["DRAFT", "READY", "DONE", "CANCELLED"].map((group) => `<section class="kanban-column"><div class="kanban-column-head">${status(group)}<strong>${state.operations.filter((item) => item.status === group).length}</strong></div>${state.operations.filter((item) => item.status === group).map(receiptCard).join("") || `<div class="muted kanban-empty">No items</div>`}</section>`).join("");
+  const content = view === "receipts" && layout === "kanban" ? `<div class="kanban-board">${board}</div>` : table(headers, rows, `No ${heading.toLowerCase()} yet.`);
+  const receiptTools = view === "receipts" ? `<input class="search" id="receipt-search" placeholder="Search reference or contact"><button class="button" data-toggle-kanban="receipts">${layout === "kanban" ? "List view" : "Kanban view"}</button>` : "";
+  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">${heading}</div><div class="muted">${description}</div></div><div class="toolbar-right">${receiptTools}<button class="button button-dark" data-action="new-${view}">+ New ${heading.slice(0, -1).toLowerCase()}</button></div></div><section class="panel">${content}</section>`;
+  if (view === "receipts" && layout === "list") $("#receipt-search").addEventListener("input", (event) => { const query = event.target.value.toLowerCase(); document.querySelectorAll(".data-table tbody tr").forEach((row) => { row.hidden = !row.dataset.search.toLowerCase().includes(query); }); });
+}
+
+async function renderReceiptDetail(receiptId) {
+  const receipt = await api(`/receipts/${receiptId}`);
+  setActive("receipts");
+  setPageMeta(`Receipt ${receipt.reference}`);
+  const action = receipt.status === "DRAFT" ? `<button class="button button-dark" data-receipt-action="ready" data-id="${esc(receipt.id)}">Todo</button>` : receipt.status === "READY" ? `<button class="button button-dark" data-receipt-action="validate" data-id="${esc(receipt.id)}">Validate</button>` : "";
+  const cancel = ["DONE", "CANCELLED"].includes(receipt.status) ? "" : `<button class="button button-danger" data-receipt-action="cancel" data-id="${esc(receipt.id)}">Cancel</button>`;
+  const products = (receipt.items || []).map((item) => `<tr><td><strong>${esc(item.sku)}</strong><br><span class="muted">${esc(item.product)}</span></td><td>${esc(item.quantity)}</td></tr>`);
+  const statusLabel = receipt.status === "DONE" ? "Received" : pretty(receipt.status);
+  $("#page").innerHTML = `<div class="detail-toolbar"><div class="toolbar-left"><button class="button button-quiet" data-view="receipts">← Receipts</button><div><div class="eyebrow">RECEIPT</div><h2 class="detail-title">${esc(receipt.reference)}</h2></div></div><div class="toolbar-right">${action}<button class="button" data-receipt-action="print">Print</button>${cancel}</div></div><div class="detail-layout"><section><div class="panel detail-panel"><div class="detail-status"><span class="muted">Status</span><span class="status ${receipt.status.toLowerCase()}">${statusLabel}</span></div><div class="detail-fields"><div><span>Unique ID</span><strong>${esc(receipt.id)}</strong></div><div><span>Receive from</span><strong>${esc(receipt.receive_from || "-")}</strong></div><div><span>Schedule date</span><strong>${esc(receipt.schedule_date || "-")}</strong></div><div><span>Responsible</span><strong>${esc(receipt.contact || "-")}</strong></div><div><span>To</span><strong>${esc(receipt.to_location || "-")}</strong></div></div></div><section class="panel"><div class="panel-head"><div><h2>Products in receipt</h2><span class="muted">${receipt.items?.length || 0} line(s)</span></div></div>${table(["Product","Quantity"], products, "No products added yet.")}<div class="panel-footer"><button class="button" data-receipt-action="add-product" data-id="${esc(receipt.id)}" ${receipt.status !== "DRAFT" ? "disabled" : ""}>+ New product</button></div></section></section><aside class="panel workflow-panel"><div class="eyebrow">WORKFLOW</div><h3>Receipt status</h3><div class="workflow-step active"><strong>Draft</strong><span>Initial stage</span></div><div class="workflow-step ${["READY", "DONE"].includes(receipt.status) ? "active" : ""}"><strong>Ready</strong><span>Ready to receive</span></div><div class="workflow-step ${receipt.status === "DONE" ? "active" : ""}"><strong>Received</strong><span>Stock updated and receipt closed</span></div></aside></div>`;
+}
+
+function openReceiptProductForm(receiptId) {
+  formDialog("Add product to receipt", `<label>Stock item<select name="product_id" required><option value="">Select stock item</option>${optionList(state.products)}</select></label><label>Location<select name="location_id" required><option value="">Select location</option>${optionList(state.locations)}</select></label><label>Quantity<input name="quantity" type="number" min="0.001" step="0.001" required></label>`, async (data) => api(`/receipts/${receiptId}/items`, { method: "POST", body: JSON.stringify(Object.fromEntries(data)) }), () => renderReceiptDetail(receiptId));
 }
 
 function renderProfile() {
@@ -123,7 +154,7 @@ function openResetDialog() {
   dialog.showModal();
 }
 
-function formDialog(title, content, submit) { const dialog = document.createElement("dialog"); dialog.className = "modal"; dialog.innerHTML = `<div class="modal-head"><div><div class="eyebrow">NEW RECORD</div><h2>${title}</h2></div><button class="icon-button" data-close-dialog>×</button></div><form class="form-grid">${content}<div class="form-actions"><button type="button" class="button button-quiet" data-close-dialog>Cancel</button><button class="button button-dark">Create</button></div></form>`; document.body.append(dialog); dialog.showModal(); dialog.querySelector("form").addEventListener("submit", async (event) => { event.preventDefault(); try { await submit(new FormData(event.target)); dialog.close(); dialog.remove(); notify(`${title} created`); render(); } catch (error) { notify(error.message, "error"); } }); dialog.addEventListener("close", () => dialog.remove()); }
+function formDialog(title, content, submit, after = () => render()) { const dialog = document.createElement("dialog"); dialog.className = "modal"; dialog.innerHTML = `<div class="modal-head"><div><div class="eyebrow">NEW RECORD</div><h2>${title}</h2></div><button class="icon-button" data-close-dialog>×</button></div><form class="form-grid">${content}<div class="form-actions"><button type="button" class="button button-quiet" data-close-dialog>Cancel</button><button class="button button-dark">Create</button></div></form>`; document.body.append(dialog); dialog.showModal(); dialog.querySelector("form").addEventListener("submit", async (event) => { event.preventDefault(); try { await submit(new FormData(event.target)); dialog.close(); dialog.remove(); notify(`${title} created`); await after(); } catch (error) { notify(error.message, "error"); } }); dialog.addEventListener("close", () => dialog.remove()); }
 
 function openProductForm() { formDialog("New stock item", `<label>SKU / code<input name="sku" required></label><label>Stock item name<input name="name" required></label><label>Category<select name="category_id"><option value="">Uncategorised</option>${optionList(state.categories)}</select></label><label>Unit of measure<input name="unit" value="piece"></label><label>Unit cost<input name="unit_cost" type="number" min="0" step="0.01" value="0"></label><label>Reorder level<input name="reorder_level" type="number" min="0" step="0.001" value="0"></label><label class="wide">Description<textarea name="description"></textarea></label>`, async (data) => api("/products", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) })); }
 function openWarehouseForm() { formDialog("New warehouse", `<label>Warehouse name<input name="name" required></label><label>Short code<input name="short_code" required></label><label class="wide">Address<textarea name="address"></textarea></label>`, async (data) => api("/warehouses", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) })); }
@@ -133,8 +164,10 @@ function openOperationForm(type) {
   const isDelivery = type === "deliveries";
   const userId = state.user?.id || "";
   let fields;
+  const autoReference = `<div class="wide callout">Reference is generated automatically from the warehouse code and operation type.</div>`;
+  const responsibleField = userId ? `<label>Responsible<input value="${esc(state.user.login_id)}" readonly><input type="hidden" name="responsible_id" value="${esc(userId)}"></label>` : `<label>Responsible user ID<input name="responsible_id" placeholder="UUID" required></label>`;
   if (isReceipt || isDelivery) {
-    fields = `<label>Reference<input name="reference" placeholder="MAIN/${isReceipt ? "IN" : "OUT"}/0001" required></label><label>Responsible user ID<input name="responsible_id" value="${esc(userId)}" placeholder="UUID" required></label><label>Warehouse<select name="warehouse_id" required><option value="">Select warehouse</option>${optionList(state.warehouses)}</select></label><label>Schedule date<input name="schedule_date" type="date"></label><label>${isReceipt ? "Receive from" : "Delivery address"}<input name="${isReceipt ? "receive_from" : "delivery_address"}"></label><label>Product<select name="product_id" required><option value="">Select product</option>${optionList(state.products)}</select></label><label>Location<select name="location_id" required><option value="">Select location</option>${optionList(state.locations)}</select></label><label>Quantity<input name="quantity" type="number" min="0.001" step="0.001" required></label>`;
+    fields = `${autoReference}${responsibleField}<label>Warehouse<select name="warehouse_id" required><option value="">Select warehouse</option>${optionList(state.warehouses)}</select></label><label>Schedule date<input name="schedule_date" type="date"></label><label>${isReceipt ? "Receive from" : "Delivery address"}<input name="${isReceipt ? "receive_from" : "delivery_address"}"></label><label>Stock item<select name="product_id" required><option value="">Select stock item</option>${optionList(state.products)}</select></label><label>Location<select name="location_id" required><option value="">Select location</option>${optionList(state.locations)}</select></label><label>Quantity<input name="quantity" type="number" min="0.001" step="0.001" required></label>`;
   } else if (type === "transfers") {
     fields = `<label>Reference<input name="reference" placeholder="MAIN/MOVE/0001" required></label><label>Responsible user ID<input name="responsible_id" value="${esc(userId)}" placeholder="UUID" required></label><label>From location<select name="from_location_id" required><option value="">Select source</option>${optionList(state.locations)}</select></label><label>To location<select name="to_location_id" required><option value="">Select destination</option>${optionList(state.locations)}</select></label><label>Product<select name="product_id" required><option value="">Select product</option>${optionList(state.products)}</select></label><label>Quantity<input name="quantity" type="number" min="0.001" step="0.001" required></label>`;
   } else {
@@ -153,7 +186,29 @@ function openOperationForm(type) {
 async function loadUser() { try { state.user = await api("/auth/me"); $("#user-name").textContent = state.user.login_id; $("#user-role").textContent = state.user.role; $("#user-avatar").textContent = state.user.login_id.slice(0, 1).toUpperCase(); $("#connection-status").textContent = "Database connected"; $("#connection-status").className = "connection-dot ok"; } catch { $("#connection-status").textContent = "Read-only mode"; $("#connection-status").className = "connection-dot"; } }
 
 document.addEventListener("click", async (event) => {
+  const kanbanToggle = event.target.closest("[data-toggle-kanban]");
+  if (kanbanToggle) {
+    const view = kanbanToggle.dataset.toggleKanban;
+    renderOperations(view, state.operationLayout[view] === "kanban" ? "list" : "kanban");
+    return;
+  }
   const viewNode = event.target.closest("[data-view]"); if (viewNode) { render(viewNode.dataset.view); $("#sidebar").classList.remove("open"); return; }
+  const receiptRow = event.target.closest("[data-receipt-id]");
+  if (receiptRow && !event.target.closest("[data-op-action]")) { renderReceiptDetail(receiptRow.dataset.receiptId); return; }
+  const receiptAction = event.target.closest("[data-receipt-action]");
+  if (receiptAction) {
+    const action = receiptAction.dataset.receiptAction;
+    const id = receiptAction.dataset.id;
+    if (action === "print") { window.print(); return; }
+    if (action === "add-product") { await loadReferenceData(); openReceiptProductForm(id); return; }
+    try {
+      const endpoint = action === "ready" ? `/receipts/${id}/ready` : action === "validate" ? `/receipts/${id}/validate` : `/receipts/${id}/cancel`;
+      const options = action === "validate" ? { method: "POST", body: JSON.stringify({ created_by: state.user?.id }) } : { method: "POST" };
+      if (action === "validate" && !state.user?.id) throw new Error("Sign in before validating a receipt");
+      await api(endpoint, options); notify(action === "ready" ? "Receipt is ready to receive" : action === "validate" ? "Receipt received and stock updated" : "Receipt cancelled"); renderReceiptDetail(id);
+    } catch (error) { notify(error.message, "error"); }
+    return;
+  }
   const operationButton = event.target.closest("[data-op-action]");
   if (operationButton) {
     const { opAction, opType, id } = operationButton.dataset;

@@ -75,6 +75,11 @@ Operations follow the intended workflow: create a document, add its product
 lines, mark it Ready, then validate it. Validation is the point at which stock
 and the ledger are updated.
 
+Receipt and delivery references are generated automatically in the format
+`<WAREHOUSE>/IN/001` or `<WAREHOUSE>/OUT/001`. The number is incremented for
+that warehouse and operation type. Receipt destinations use the warehouse and
+location format, such as `WH/STOCK1`.
+
 For local password recovery, click `Forgot password?` on the Login card, enter
 the account email, and request a code. In Flask debug mode the development OTP
 is shown in the reset dialog. In production, connect that endpoint to your

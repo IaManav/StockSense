@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
 import secrets
+import re
 from typing import Any
 from uuid import UUID
 
@@ -349,13 +350,23 @@ def receive_stock(product_id: UUID, location_id: UUID):
     return jsonify({**data(stock), "free_to_use": stock.free_to_use})
 
 
+def next_operation_reference(model: type, warehouse: Warehouse, operation_code: str) -> str:
+    pattern = re.compile(rf"^{re.escape(warehouse.short_code)}/{operation_code}/(\d+)$")
+    references = db().scalars(select(model.reference).where(model.reference.like(f"{warehouse.short_code}/{operation_code}/%"))).all()
+    numbers = [int(match.group(1)) for value in references if (match := pattern.match(value))]
+    return f"{warehouse.short_code}/{operation_code}/{(max(numbers, default=0) + 1):03d}"
+
+
 def create_operation(model: type, body: dict[str, Any]):
-    required(body, "reference", "warehouse_id", "responsible_id")
+    required(body, "warehouse_id", "responsible_id")
     warehouse_id = as_uuid(body["warehouse_id"], "warehouse_id")
     responsible_id = as_uuid(body["responsible_id"], "responsible_id")
-    if not isinstance(get_required(Warehouse, warehouse_id, "Warehouse"), Warehouse) or not isinstance(get_required(User, responsible_id, "User"), User):
+    warehouse = get_required(Warehouse, warehouse_id, "Warehouse")
+    if not isinstance(warehouse, Warehouse) or not isinstance(get_required(User, responsible_id, "User"), User):
         return fail("Warehouse or user not found", 404)
-    fields = {"reference": body["reference"], "warehouse_id": warehouse_id, "responsible_id": responsible_id, "schedule_date": as_date(body.get("schedule_date"), "schedule_date")}
+    operation_code = "IN" if model is Receipt else "OUT"
+    reference = body.get("reference") or next_operation_reference(model, warehouse, operation_code)
+    fields = {"reference": reference, "warehouse_id": warehouse_id, "responsible_id": responsible_id, "schedule_date": as_date(body.get("schedule_date"), "schedule_date")}
     if model is Receipt:
         fields["receive_from"] = body.get("receive_from")
     else:
@@ -374,7 +385,65 @@ def create_receipt():
 @api_bp.get("/receipts")
 def list_receipts():
     query = select(Receipt).order_by(Receipt.id.desc())
-    return jsonify(items=[data(item) for item in db().scalars(query).all()])
+    items = []
+    for item in db().scalars(query).all():
+        record = data(item)
+        warehouse = db().get(Warehouse, item.warehouse_id)
+        locations = []
+        for line in item.items:
+            location = db().get(Location, line.location_id)
+            if location:
+                locations.append(f"{warehouse.short_code}/{location.short_code}")
+        contact = db().get(User, item.responsible_id)
+        record["to_location"] = ", ".join(dict.fromkeys(locations)) or "-"
+        record["contact"] = contact.login_id if contact else str(item.responsible_id)
+        items.append(record)
+    return jsonify(items=items)
+
+
+def receipt_details(receipt: Receipt) -> dict[str, Any]:
+    record = data(receipt)
+    warehouse = db().get(Warehouse, receipt.warehouse_id)
+    responsible = db().get(User, receipt.responsible_id)
+    record["to_location"] = "-"
+    record["contact"] = responsible.login_id if responsible else str(receipt.responsible_id)
+    record["items"] = []
+    locations = []
+    for line in receipt.items:
+        product = db().get(Product, line.product_id)
+        location = db().get(Location, line.location_id)
+        destination = f"{warehouse.short_code}/{location.short_code}" if warehouse and location else "-"
+        locations.append(destination)
+        record["items"].append({
+            "id": str(line.id),
+            "product_id": str(line.product_id),
+            "product": product.name if product else "-",
+            "sku": product.sku if product else "-",
+            "quantity": line.quantity,
+            "to_location": destination,
+        })
+    record["to_location"] = ", ".join(dict.fromkeys(locations)) or "-"
+    return record
+
+
+@api_bp.get("/receipts/<uuid:receipt_id>")
+def get_receipt(receipt_id: UUID):
+    receipt = get_required(Receipt, receipt_id, "Receipt")
+    if not isinstance(receipt, Receipt):
+        return receipt
+    return jsonify(receipt_details(receipt))
+
+
+@api_bp.post("/receipts/<uuid:receipt_id>/cancel")
+def cancel_receipt(receipt_id: UUID):
+    receipt = get_required(Receipt, receipt_id, "Receipt")
+    if not isinstance(receipt, Receipt):
+        return receipt
+    if receipt.status == ReceiptStatus.DONE:
+        return fail("A received receipt cannot be cancelled", 409)
+    receipt.status = ReceiptStatus.CANCELLED
+    commit()
+    return jsonify(data(receipt))
 
 
 @api_bp.post("/deliveries")
