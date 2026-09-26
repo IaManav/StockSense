@@ -7,7 +7,6 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     Enum,
-    Text,
     Numeric,
     DECIMAL
 )
@@ -17,16 +16,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
-class DeliveryStatus(str, enum.Enum):
+class ReceiptStatus(str, enum.Enum):
     DRAFT = "DRAFT"
-    WAITING = "WAITING"
     READY = "READY"
     DONE = "DONE"
     CANCELLED = "CANCELLED"
 
 
-class Delivery(Base):
-    __tablename__ = "deliveries"
+class Receipt(Base):
+    __tablename__ = "receipts"
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
@@ -44,21 +42,17 @@ class Delivery(Base):
         nullable=False
     )
 
-    delivery_address: Mapped[str | None] = mapped_column(
-        Text
+    receive_from: Mapped[str | None] = mapped_column(
+        String(255)
     )
 
     schedule_date: Mapped[date | None] = mapped_column(
         Date
     )
 
-    operation_type: Mapped[str | None] = mapped_column(
-        String(100)
-    )
-
-    status: Mapped[DeliveryStatus] = mapped_column(
-        Enum(DeliveryStatus),
-        default=DeliveryStatus.DRAFT
+    status: Mapped[ReceiptStatus] = mapped_column(
+        Enum(ReceiptStatus),
+        default=ReceiptStatus.DRAFT
     )
 
     responsible_id: Mapped[uuid.UUID] = mapped_column(
@@ -66,16 +60,16 @@ class Delivery(Base):
         nullable=False
     )
 
-class DeliveryItem(Base):
-    __tablename__ = "delivery_items"
+class ReceiptItem(Base):
+    __tablename__ = "receipt_items"
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
         default=uuid.uuid4
     )
 
-    delivery_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("deliveries.id", ondelete="CASCADE"),
+    receipt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("receipts.id", ondelete="CASCADE"),
         nullable=False
     )
 

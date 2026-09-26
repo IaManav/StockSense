@@ -1,0 +1,118 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+bin/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before launching pyinstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.toml
+.cache
+.pytest_cache/
+.noscript/
+.noserc
+.configuration
+.coverage
+.coverage.*
+.nox/
+.hypothesis/
+.ruamel_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the Python version is personal.
+#   For a specific application, you might want to commit them.
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#118, it is recommended to include Pipfile.lock in version control.
+#   However, if you're building a library, you should skip it.
+# Pipfile.lock
+
+# poetry
+#   Poetry auto-generates poetry.lock. It is recommended to commit this file.
+# poetry.lock
+
+# pdm
+#   PDM auto-generates pdm.lock. It is recommended to commit this file.
+# pdm.lock
+
+# venv / Virtual Environments (Crucial)
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs and Code Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS generated files
+.DS_Store
+Thumbs.db
