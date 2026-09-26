@@ -6,15 +6,18 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./stocksense.db")
 
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set")
+# SQLAlchemy names the PostgreSQL dialect ``postgresql``. Some hosting
+# providers still publish URLs with the older ``postgres://`` shorthand.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
 )
 
 

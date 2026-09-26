@@ -11,7 +11,7 @@ from sqlalchemy import (
     DECIMAL
 )
 
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -60,6 +60,8 @@ class Receipt(Base):
         nullable=False
     )
 
+    items = relationship("ReceiptItem", back_populates="receipt", cascade="all, delete-orphan")
+
 class ReceiptItem(Base):
     __tablename__ = "receipt_items"
 
@@ -87,3 +89,5 @@ class ReceiptItem(Base):
         Numeric(14, 3),
         nullable=False
     )
+
+    receipt = relationship("Receipt", back_populates="items")

@@ -10,7 +10,7 @@ from sqlalchemy import (
     Enum,
 )
 
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -61,6 +61,8 @@ class StockAdjustment(Base):
         nullable=False,
     )
 
+    items = relationship("StockAdjustmentItem", back_populates="adjustment", cascade="all, delete-orphan")
+
 
 class StockAdjustmentItem(Base):
     __tablename__ = "stock_adjustment_items"
@@ -97,3 +99,5 @@ class StockAdjustmentItem(Base):
         Numeric(14, 3),
         nullable=False,
     )
+
+    adjustment = relationship("StockAdjustment", back_populates="items")
