@@ -110,7 +110,6 @@ def signup():
     user = User(login_id=login_id, email=email, password_hash=generate_password_hash(body["password"]))
     db().add(user)
     commit()
-    session["user_id"] = str(user.id)
     return jsonify(data(user)), 201
 
 

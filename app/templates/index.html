@@ -54,6 +54,7 @@
       <section class="auth-card">
         <div class="eyebrow">WELCOME BACK</div><h2>Sign in</h2><p class="muted">Access your inventory workspace.</p>
         <form id="login-form" class="form-grid">
+          <div id="login-message" class="auth-message wide" role="alert"></div>
           <label class="wide">Login ID<input name="login_id" required minlength="6" maxlength="12" autocomplete="username"></label>
           <label class="wide">Password<input name="password" type="password" autocomplete="current-password" required></label>
           <button type="button" class="button button-quiet auth-link" id="forgot-password">Forgot password?</button>
@@ -63,6 +64,7 @@
       <section class="auth-card auth-card-signup">
         <div class="eyebrow">NEW ACCOUNT</div><h2>Sign up</h2><p class="muted">Create an account to manage stock.</p>
         <form id="signup-form" class="form-grid">
+          <div id="signup-message" class="auth-message wide" role="alert"></div>
           <label class="wide">Login ID<input name="login_id" required minlength="6" maxlength="12" autocomplete="username"></label>
           <label class="wide">Email<input name="email" type="email" autocomplete="email" required></label>
           <label class="wide">Password<input name="password" type="password" autocomplete="new-password" required minlength="8" pattern="(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters with uppercase, lowercase, number, and special character."><small class="password-help">8+ characters, uppercase, lowercase, number, and symbol.</small></label>

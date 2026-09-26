@@ -1,4 +1,4 @@
-const state = { view: "dashboard", user: null, products: [], categories: [], warehouses: [], locations: [], operations: [], operationLayout: {} };
+const state = { view: "dashboard", user: null, products: [], categories: [], warehouses: [], locations: [], operations: [], operationLayout: {}, currentWarehouseId: localStorage.getItem("stocksense.currentWarehouseId"), currentLocationId: localStorage.getItem("stocksense.currentLocationId") };
 
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#039;"}[char]));
@@ -17,6 +17,8 @@ function notify(message, type = "success") {
   window.clearTimeout(notify.timer); notify.timer = window.setTimeout(() => { node.className = "notice"; }, 4500);
 }
 
+function showAuthMessage(id, message, type = "error") { const node = $("#" + id); if (!node) return; node.textContent = message; node.className = "auth-message show " + type; node.style.color = type === "success" ? "var(--green)" : ""; node.style.borderColor = type === "success" ? "#c8e6d5" : ""; node.style.background = type === "success" ? "#f7fffa" : ""; }
+
 function status(value) { return `<span class="status ${String(value || "").toLowerCase()}">${esc(pretty(value || "-"))}</span>`; }
 function empty(title, detail = "Nothing has been recorded yet.") { return `<div class="empty"><strong>${esc(title)}</strong><span>${esc(detail)}</span></div>`; }
 function table(headers, rows, emptyMessage = "No records found.") {
@@ -30,6 +32,21 @@ async function loadReferenceData() {
   ]);
   state.products = products.items || []; state.categories = categories.items || [];
   state.warehouses = warehouses.items || []; state.locations = locations.items || [];
+  if (!state.warehouses.some((warehouse) => warehouse.id === state.currentWarehouseId)) state.currentWarehouseId = state.warehouses[0]?.id || null;
+  const locationsInWarehouse = state.locations.filter((location) => location.warehouse_id === state.currentWarehouseId);
+  if (!locationsInWarehouse.some((location) => location.id === state.currentLocationId)) state.currentLocationId = locationsInWarehouse[0]?.id || null;
+  localStorage.setItem("stocksense.currentWarehouseId", state.currentWarehouseId || "");
+  localStorage.setItem("stocksense.currentLocationId", state.currentLocationId || "");
+}
+
+function currentContextControls() {
+  const locations = state.locations.filter((location) => location.warehouse_id === state.currentWarehouseId);
+  return `<div class="toolbar-right"><select class="select" id="current-warehouse" aria-label="Current warehouse">${state.warehouses.map((warehouse) => `<option value="${esc(warehouse.id)}" ${warehouse.id === state.currentWarehouseId ? "selected" : ""}>${esc(warehouse.name)}</option>`).join("")}</select><select class="select" id="current-location" aria-label="Current location"><option value="">All locations</option>${locations.map((location) => `<option value="${esc(location.id)}" ${location.id === state.currentLocationId ? "selected" : ""}>${esc(location.name)}</option>`).join("")}</select></div>`;
+}
+
+function bindCurrentContextControls() {
+  $("#current-warehouse")?.addEventListener("change", (event) => { state.currentWarehouseId = event.target.value; state.currentLocationId = state.locations.find((location) => location.warehouse_id === state.currentWarehouseId)?.id || null; localStorage.setItem("stocksense.currentWarehouseId", state.currentWarehouseId || ""); localStorage.setItem("stocksense.currentLocationId", state.currentLocationId || ""); render(state.view); });
+  $("#current-location")?.addEventListener("change", (event) => { state.currentLocationId = event.target.value || null; localStorage.setItem("stocksense.currentLocationId", state.currentLocationId || ""); render(state.view); });
 }
 
 function setPageMeta(title) { $("#page-title").textContent = title; $("#breadcrumb").textContent = title; document.title = `StockSense - ${title}`; }
@@ -67,10 +84,17 @@ async function renderDashboard() {
   $("#page").innerHTML = `<div class="content-grid"><div class="dashboard-column">${subsection("Receipts", "Incoming stock scheduled for the warehouse", [["Late items", lateReceipts.length, "stock-negative"], ["Operations", receiptOperations.length, ""]], [...lateReceipts, ...receiptOperations], "receive_from", "No receipt operations scheduled.")}</div><div class="dashboard-column">${subsection("Deliveries", "Outgoing stock and customer shipments", [["Late", lateDeliveries.length, "stock-negative"], ["Waiting", waitingDeliveries.length, "warning"], ["Operations", deliveryOperations.length, ""]], [...lateDeliveries, ...waitingDeliveries, ...deliveryOperations], "delivery_address", "No delivery operations scheduled.")}</div></div>`;
 }
 
-function renderProducts() {
-  const rows = state.products.map((product) => `<tr><td><strong>${esc(product.sku)}</strong></td><td>${esc(product.name)}</td><td>${esc(state.categories.find((item) => item.id === product.category_id)?.name || "Uncategorised")}</td><td>${esc(product.unit || "piece")}</td><td>${esc(product.reorder_level ?? 0)}</td><td>${product.is_active ? status("Ready") : status("Cancelled")}</td></tr>`);
-  $("#page").innerHTML = `<div class="page-toolbar"><div class="toolbar-left"><input class="search" id="product-search" placeholder="Search by name or SKU" value=""></div><div class="toolbar-right"><button class="button button-dark" data-action="new-product">+ New stock item</button></div></div><section class="panel"><div class="panel-head"><div><h2 class="section-title">Stock catalogue</h2><span class="muted">${state.products.length} stock items</span></div><button class="button" data-view="stock">View stock by location</button></div>${table(["SKU","Stock item","Category","Unit","Reorder level","Status"], rows, "No stock items yet. Add the first stock item to begin tracking stock.")}</section>`;
-  $("#product-search").addEventListener("input", (event) => { const query = event.target.value.toLowerCase(); document.querySelectorAll(".data-table tbody tr").forEach((row) => { row.hidden = !row.textContent.toLowerCase().includes(query); }); });
+async function renderProducts() {
+  const result = await api("/stock");
+  const rows = (result.items || []).map((item) => {
+    const product = state.products.find((entry) => entry.id === item.product_id);
+    const location = state.locations.find((entry) => entry.id === item.location_id);
+    const warehouse = state.warehouses.find((entry) => entry.id === location?.warehouse_id);
+    const available = Number(item.free_to_use || 0);
+    return `<tr data-search="${esc(`${product?.sku || ""} ${product?.name || ""} ${warehouse?.name || ""} ${location?.name || ""}`)}"><td><strong>${esc(product?.name || "Unknown product")}</strong><br><span class="muted">${esc(product?.sku || item.product_id?.slice(0, 8) || "-")}</span><br><small class="muted">${esc(warehouse?.name || "Unknown warehouse")} / ${esc(location?.name || item.location_id?.slice(0, 8) || "Unknown location")}</small></td><td>${esc(product?.unit_cost ?? 0)}</td><td>${esc(item.on_hand_quantity)} <button class="button button-quiet" data-stock-update="true" data-product-id="${esc(item.product_id)}" data-location-id="${esc(item.location_id)}" data-product-name="${esc(product?.name || "Stock item")}" data-location-name="${esc(`${warehouse?.name || "Warehouse"} / ${location?.name || "Location"}`)}" data-on-hand="${esc(item.on_hand_quantity)}">Update</button></td><td class="${available <= 0 ? "stock-negative" : "stock-positive"}">${esc(item.free_to_use)}</td></tr>`;
+  });
+  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">Stock catalogue</div><div class="muted">Inventory balances by warehouse and location</div></div><div class="toolbar-right"><input class="search" id="product-search" placeholder="Search product, warehouse, or location"><button class="button button-dark" data-action="new-product">+ New stock item</button></div></div><section class="panel"><div class="panel-head"><div><h2>Stock catalogue</h2><span class="muted">${rows.length} stock balance(s)</span></div></div>${table(["Product", "Per unit cost", "On hand (units)", "Free to use (units)"], rows, "No stock records yet. Add stock or validate a receipt to begin tracking inventory.")}</section>`;
+  $("#product-search").addEventListener("input", (event) => { const query = event.target.value.toLowerCase(); document.querySelectorAll(".data-table tbody tr").forEach((row) => { row.hidden = !row.dataset.search.toLowerCase().includes(query); }); });
 }
 
 async function renderStock() {
@@ -82,7 +106,7 @@ async function renderStock() {
     const available = Number(item.free_to_use || 0);
     return `<tr data-search="${esc(`${product?.sku || ""} ${product?.name || ""} ${warehouse?.name || ""} ${location?.name || ""}`)}"><td><strong>${esc(product?.name || "Unknown product")}</strong><br><span class="muted">${esc(product?.sku || item.product_id?.slice(0, 8) || "-")}</span><br><small class="muted">${esc(warehouse?.name || "Unknown warehouse")} / ${esc(location?.name || item.location_id?.slice(0, 8) || "Unknown location")}</small></td><td>${esc(product?.unit_cost ?? 0)}</td><td>${esc(item.on_hand_quantity)} <button class="button button-quiet" data-stock-update="true" data-product-id="${esc(item.product_id)}" data-location-id="${esc(item.location_id)}" data-product-name="${esc(product?.name || "Stock item")}" data-location-name="${esc(`${warehouse?.name || "Warehouse"} / ${location?.name || "Location"}`)}" data-on-hand="${esc(item.on_hand_quantity)}">Update</button></td><td class="${available <= 0 ? "stock-negative" : "stock-positive"}">${esc(item.free_to_use)}</td></tr>`;
   });
-  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">Stock</div><div class="muted">Inventory balances by warehouse and location</div></div><div class="toolbar-right"><input class="search" id="stock-search" placeholder="Search product, warehouse, or location"><button class="button button-dark" data-action="quick-receipt">+ Receive stock</button></div></div><section class="panel"><div class="panel-head"><div><h2>Stock by location</h2><span class="muted">Free to use is on-hand quantity minus reserved quantity.</span></div></div>${table(["Product","Per unit cost","On hand","Free to use"], rows, "No stock records yet. Validate a receipt or receive stock into a location.")}</section>`;
+  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">Stock</div><div class="muted">Inventory balances by warehouse and location</div></div><div class="toolbar-right"><input class="search" id="stock-search" placeholder="Search product, warehouse, or location"><button class="button button-dark" data-action="quick-receipt">+ Receive stock</button></div></div><section class="panel"><div class="panel-head"><div><h2>Stock by location</h2><span class="muted">Free to use is on-hand quantity minus reserved quantity.</span></div></div>${table(["Product", "Per unit cost", "On hand (units)", "Free to use (units)"], rows, "No stock records yet. Validate a receipt or receive stock into a location.")}</section>`;
   $("#stock-search").addEventListener("input", (event) => { const query = event.target.value.toLowerCase(); document.querySelectorAll(".data-table tbody tr").forEach((row) => { row.hidden = !row.dataset.search.toLowerCase().includes(query); }); });
 }
 
@@ -92,13 +116,15 @@ function openStockUpdateForm(button) {
 }
 
 function renderWarehouses() {
-  const rows = state.warehouses.map((warehouse) => `<tr><td><strong>${esc(warehouse.name)}</strong></td><td>${esc(warehouse.short_code)}</td><td>${esc(warehouse.address || "-")}</td><td>${state.locations.filter((location) => location.warehouse_id === warehouse.id).length}</td><td>${warehouse.is_active ? status("Ready") : status("Cancelled")}</td></tr>`);
-  $("#page").innerHTML = `<div class="page-toolbar"><div class="callout">Warehouses are the top-level stock containers. Add locations such as racks, rooms, or production floors inside each warehouse.</div><button class="button button-dark" data-action="new-warehouse">+ New warehouse</button></div><section class="panel">${table(["Warehouse","Short code","Address","Locations","Status"], rows, "No warehouses configured yet.")}</section>`;
+  const rows = state.warehouses.map((warehouse) => `<tr><td><strong>${esc(warehouse.name)}</strong>${warehouse.id === state.currentWarehouseId ? ` <span class="status ready">Current</span>` : ""}</td><td>${esc(warehouse.short_code)}</td><td>${esc(warehouse.address || "-")}</td></tr>`);
+  $("#page").innerHTML = `<div class="page-toolbar"><div class="callout">Current warehouse: <strong>${esc(state.warehouses.find((warehouse) => warehouse.id === state.currentWarehouseId)?.name || "Not selected")}</strong></div>${currentContextControls()}<button class="button button-dark" data-action="new-warehouse">+ New warehouse</button></div><section class="panel">${table(["Name", "Shortcut code", "Address"], rows, "No warehouses configured yet.")}</section>`;
+  bindCurrentContextControls();
 }
 
 function renderLocations() {
-  const rows = state.locations.map((location) => `<tr><td><strong>${esc(location.name)}</strong></td><td>${esc(location.short_code)}</td><td>${esc(state.warehouses.find((warehouse) => warehouse.id === location.warehouse_id)?.name || location.warehouse_id?.slice(0, 8) || "-")}</td><td><button class="button button-quiet" data-view="stock">View stock →</button></td></tr>`);
-  $("#page").innerHTML = `<div class="page-toolbar"><div class="callout">Locations represent racks, rooms, receiving areas, or production floors inside a warehouse.</div><button class="button button-dark" data-action="new-location">+ New location</button></div><section class="panel">${table(["Location","Short code","Warehouse",""], rows, "No locations configured yet.")}</section>`;
+  const rows = state.locations.filter((location) => location.warehouse_id === state.currentWarehouseId).map((location) => `<tr><td><strong>${esc(location.name)}</strong>${location.id === state.currentLocationId ? ` <span class="status ready">Current</span>` : ""}</td><td>${esc(location.short_code)}</td><td>${esc(state.warehouses.find((warehouse) => warehouse.id === location.warehouse_id)?.name || location.warehouse_id?.slice(0, 8) || "-")}</td></tr>`);
+  $("#page").innerHTML = `<div class="page-toolbar"><div class="callout">Current warehouse: <strong>${esc(state.warehouses.find((warehouse) => warehouse.id === state.currentWarehouseId)?.name || "Not selected")}</strong>${state.currentLocationId ? ` · Current location: <strong>${esc(state.locations.find((location) => location.id === state.currentLocationId)?.name || "Not selected")}</strong>` : ""}</div>${currentContextControls()}<button class="button button-dark" data-action="new-location">+ New location</button></div><section class="panel">${table(["Name", "Shortcut code", "Warehouse"], rows, "No locations configured for the current warehouse.")}</section>`;
+  bindCurrentContextControls();
 }
 
 async function renderLedger() {
@@ -300,19 +326,21 @@ $("#mobile-menu").addEventListener("click", () => $("#sidebar").classList.toggle
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
+  showAuthMessage("login-message", ""); $("#login-message").classList.remove("show");
   try {
     state.user = await api("/auth/login", { method: "POST", body: JSON.stringify({ login_id: form.get("login_id"), password: form.get("password") }) });
     $("#auth-dialog").close(); loadUser(); render(); notify("Signed in");
-  } catch (error) { notify(error.message, "error"); }
+  } catch (error) { showAuthMessage("login-message", error.message); }
 });
 $("#signup-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
+  showAuthMessage("signup-message", ""); $("#signup-message").classList.remove("show");
   try {
     if (form.get("password") !== form.get("confirm_password")) throw new Error("Passwords do not match");
-    state.user = await api("/auth/signup", { method: "POST", body: JSON.stringify({ login_id: form.get("login_id"), email: form.get("email"), password: form.get("password") }) });
-    $("#auth-dialog").close(); loadUser(); render(); notify("Account created");
-  } catch (error) { notify(error.message, "error"); }
+    await api("/auth/signup", { method: "POST", body: JSON.stringify({ login_id: form.get("login_id"), email: form.get("email"), password: form.get("password") }) });
+    event.target.reset(); $("#auth-dialog").close(); openDialog(); showAuthMessage("login-message", "Account created successfully. Sign in to continue.", "success"); $("#login-form input[name=login_id]").focus();
+  } catch (error) { showAuthMessage("signup-message", error.message); }
 });
 $("#forgot-password").addEventListener("click", () => { $("#auth-dialog").close(); openResetDialog(); });
 $("#request-reset").addEventListener("click", async () => {
