@@ -12,7 +12,7 @@ from sqlalchemy import (
     DECIMAL
 )
 
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -66,6 +66,8 @@ class Delivery(Base):
         nullable=False
     )
 
+    items = relationship("DeliveryItem", back_populates="delivery", cascade="all, delete-orphan")
+
 class DeliveryItem(Base):
     __tablename__ = "delivery_items"
 
@@ -93,3 +95,5 @@ class DeliveryItem(Base):
         Numeric(14, 3),
         nullable=False
     )
+
+    delivery = relationship("Delivery", back_populates="items")

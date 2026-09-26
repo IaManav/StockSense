@@ -1,34 +1,40 @@
-from flask import Flask
+from fastapi import FastAPI
 
-from app.routes.products import product_bp
+from app.database import engine, Base
 
-
-def create_app():
-    app = Flask(__name__)
-
-    app.register_blueprint(product_bp)
-
-    @app.get("/")
-    def root():
-        return {
-            "message": "StockSense API is running"
-        }
-
-    @app.get("/health")
-    def health():
-        return {
-            "status": "ok"
-        }
-
-    return app
+from app.models import (
+    User,
+    Warehouse,
+    Location,
+    Product,
+    Stock,
+    Receipt,
+    ReceiptItem,
+    Delivery,
+    DeliveryItem,
+    StockMove,
+)
 
 
-app = create_app()
+app = FastAPI(
+    title="StockSense API",
+    version="1.0.0"
+)
 
 
-if __name__ == "__main__":
-    app.run(
-        debug=True,
-        host="0.0.0.0",
-        port=5000,
-    )
+# Create database tables
+Base.metadata.create_all(bind=engine)
+
+
+@app.get("/")
+def root():
+    return {
+        "message": "StockSense API is running"
+    }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok"
+    }

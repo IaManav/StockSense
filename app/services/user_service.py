@@ -1,52 +1,27 @@
-from datetime import datetime
+from sqlalchemy.orm import Session
+from werkzeug.security import check_password_hash, generate_password_hash
 
-from extensions import db
-from models.user import User
-
-
-def get_user(user_id):
-    return db.session.get(User, user_id)
+from app.models import User
+from app.services.inventory_service import require
 
 
-def update_profile(user_id, data):
-    user = get_user(user_id)
-    if not user:
-        raise ValueError("User not found")
+def get_user(db: Session, user_id):
+    return require(db, User, user_id, "User")
 
-    if "login_id" in data:
-        existing = User.query.filter(
-            User.login_id == data["login_id"],
-            User.id != user.id,
-        ).first()
-        if existing:
-            raise ValueError("login_id already exists")
-        user.login_id = data["login_id"]
 
-    if "email" in data:
-        existing = User.query.filter(
-            User.email == data["email"],
-            User.id != user.id,
-        ).first()
-        if existing:
-            raise ValueError("email already exists")
-        user.email = data["email"]
-
-    user.updated_at = datetime.utcnow()
-    db.session.commit()
+def update_profile(db: Session, user_id, data: dict) -> User:
+    user = get_user(db, user_id)
+    for field in ("login_id", "email"):
+        if field in data:
+            setattr(user, field, data[field].strip().lower() if field == "email" else data[field].strip())
+    db.commit()
     return user
 
 
-def change_password(user_id, old_password, new_password):
-    from werkzeug.security import check_password_hash, generate_password_hash
-
-    user = get_user(user_id)
-    if not user:
-        raise ValueError("User not found")
-
+def change_password(db: Session, user_id, old_password: str, new_password: str) -> User:
+    user = get_user(db, user_id)
     if not check_password_hash(user.password_hash, old_password):
         raise ValueError("Current password is incorrect")
-
     user.password_hash = generate_password_hash(new_password)
-    user.updated_at = datetime.utcnow()
-    db.session.commit()
+    db.commit()
     return user
