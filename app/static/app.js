@@ -78,10 +78,17 @@ async function renderStock() {
   const rows = (result.items || []).map((item) => {
     const product = state.products.find((entry) => entry.id === item.product_id);
     const location = state.locations.find((entry) => entry.id === item.location_id);
+    const warehouse = state.warehouses.find((entry) => entry.id === location?.warehouse_id);
     const available = Number(item.free_to_use || 0);
-    return `<tr><td><strong>${esc(product?.sku || item.product_id?.slice(0, 8) || "-")}</strong><br><span class="muted">${esc(product?.name || "Unknown product")}</span></td><td>${esc(location?.name || item.location_id?.slice(0, 8) || "-")}</td><td>${esc(item.on_hand_quantity)}</td><td class="${available <= 0 ? "stock-negative" : "stock-positive"}">${esc(item.free_to_use)}</td><td>${product && Number(product.reorder_level) > available ? status("Waiting") : status("Ready")}</td></tr>`;
+    return `<tr data-search="${esc(`${product?.sku || ""} ${product?.name || ""} ${warehouse?.name || ""} ${location?.name || ""}`)}"><td><strong>${esc(product?.name || "Unknown product")}</strong><br><span class="muted">${esc(product?.sku || item.product_id?.slice(0, 8) || "-")}</span><br><small class="muted">${esc(warehouse?.name || "Unknown warehouse")} / ${esc(location?.name || item.location_id?.slice(0, 8) || "Unknown location")}</small></td><td>${esc(product?.unit_cost ?? 0)}</td><td>${esc(item.on_hand_quantity)} <button class="button button-quiet" data-stock-update="true" data-product-id="${esc(item.product_id)}" data-location-id="${esc(item.location_id)}" data-product-name="${esc(product?.name || "Stock item")}" data-location-name="${esc(`${warehouse?.name || "Warehouse"} / ${location?.name || "Location"}`)}" data-on-hand="${esc(item.on_hand_quantity)}">Update</button></td><td class="${available <= 0 ? "stock-negative" : "stock-positive"}">${esc(item.free_to_use)}</td></tr>`;
   });
-  $("#page").innerHTML = `<div class="page-toolbar"><div class="callout">Stock is tracked per product and location. Free to use is on-hand quantity minus reserved quantity.</div><button class="button button-dark" data-action="quick-receipt">+ Receive stock</button></div><section class="panel">${table(["Product","Location","On hand","Free to use","Availability"], rows, "No stock records yet. Validate a receipt or receive stock into a location.")}</section>`;
+  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">Stock</div><div class="muted">Inventory balances by warehouse and location</div></div><div class="toolbar-right"><input class="search" id="stock-search" placeholder="Search product, warehouse, or location"><button class="button button-dark" data-action="quick-receipt">+ Receive stock</button></div></div><section class="panel"><div class="panel-head"><div><h2>Stock by location</h2><span class="muted">Free to use is on-hand quantity minus reserved quantity.</span></div></div>${table(["Product","Per unit cost","On hand","Free to use"], rows, "No stock records yet. Validate a receipt or receive stock into a location.")}</section>`;
+  $("#stock-search").addEventListener("input", (event) => { const query = event.target.value.toLowerCase(); document.querySelectorAll(".data-table tbody tr").forEach((row) => { row.hidden = !row.dataset.search.toLowerCase().includes(query); }); });
+}
+
+function openStockUpdateForm(button) {
+  const { productId, locationId, productName, locationName, onHand } = button.dataset;
+  formDialog("Update stock", `<div class="callout wide">${esc(productName)}<br><span class="muted">${esc(locationName)}</span></div><label class="wide">On-hand quantity<input name="on_hand_quantity" type="number" min="0" step="0.001" value="${esc(onHand)}" required></label>`, async (data) => api(`/stock/${productId}/${locationId}`, { method: "PUT", body: JSON.stringify(Object.fromEntries(data)) }), async () => { await renderStock(); });
 }
 
 function renderWarehouses() {
@@ -283,6 +290,8 @@ document.addEventListener("click", async (event) => {
   if (action === "new-location") return openLocationForm();
   if (action === "quick-receipt") return openOperationForm("receipts");
   if (action?.startsWith("new-")) return openOperationForm(action.slice(4));
+  const stockUpdate = event.target.closest("[data-stock-update]");
+  if (stockUpdate) return openStockUpdateForm(stockUpdate);
   if (event.target.closest("[data-close-dialog]")) return event.target.closest("dialog").close();
   if (event.target.closest("#logout-button")) { try { await api("/auth/logout", { method: "POST" }); state.user = null; loadUser(); render("dashboard"); notify("Signed out"); } catch (error) { notify(error.message, "error"); } }
 });

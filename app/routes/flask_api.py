@@ -362,6 +362,21 @@ def receive_stock(product_id: UUID, location_id: UUID):
     return jsonify({**data(stock), "free_to_use": stock.free_to_use})
 
 
+@api_bp.put("/stock/<uuid:product_id>/<uuid:location_id>")
+def update_stock(product_id: UUID, location_id: UUID):
+    body = payload()
+    required(body, "on_hand_quantity")
+    if not isinstance(get_required(Product, product_id, "Product"), Product) or not isinstance(get_required(Location, location_id, "Location"), Location):
+        return fail("Product or location not found", 404)
+    stock = get_or_create_stock(db(), product_id, location_id)
+    on_hand_quantity = decimal_value(body["on_hand_quantity"], "on_hand_quantity", allow_zero=True)
+    if on_hand_quantity < stock.reserved_quantity:
+        return fail("On-hand quantity cannot be lower than reserved quantity", 422)
+    stock.on_hand_quantity = on_hand_quantity
+    commit()
+    return jsonify({**data(stock), "free_to_use": stock.free_to_use})
+
+
 def next_operation_reference(model: type, warehouse: Warehouse, operation_code: str) -> str:
     pattern = re.compile(rf"^{re.escape(warehouse.short_code)}/{operation_code}/(\d+)$")
     references = db().scalars(select(model.reference).where(model.reference.like(f"{warehouse.short_code}/{operation_code}/%"))).all()
