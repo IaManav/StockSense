@@ -80,10 +80,11 @@ Receipt and delivery references are generated automatically in the format
 that warehouse and operation type. Receipt destinations use the warehouse and
 location format, such as `WH/STOCK1`.
 
-For local password recovery, click `Forgot password?` on the Login card, enter
-the account email, and request a code. In Flask debug mode the development OTP
-is shown in the reset dialog. In production, connect that endpoint to your
-email provider instead of exposing the OTP.
+For password recovery, click `Forgot password?` on the Login card, enter the
+account email, and request a code. StockSense sends the one-time code through
+the configured SMTP server. Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_FROM`, and `SMTP_USE_TLS` in `.env` before using this
+flow. Codes are stored only as hashes and expire after 10 minutes.
 
 ## Account validation
 

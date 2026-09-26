@@ -5,7 +5,7 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"
 const pretty = (value) => String(value ?? "").replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
 async function api(path, options = {}) {
-  const response = await fetch(`/api${path}`, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+  const response = await fetch(`/api${path}`, { credentials: "same-origin", cache: options.method && options.method.toUpperCase() !== "GET" ? "default" : "no-store", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
   return body;
@@ -91,9 +91,10 @@ async function renderProducts() {
     const location = state.locations.find((entry) => entry.id === item.location_id);
     const warehouse = state.warehouses.find((entry) => entry.id === location?.warehouse_id);
     const available = Number(item.free_to_use || 0);
-    return `<tr data-search="${esc(`${product?.sku || ""} ${product?.name || ""} ${warehouse?.name || ""} ${location?.name || ""}`)}"><td><strong>${esc(product?.name || "Unknown product")}</strong><br><span class="muted">${esc(product?.sku || item.product_id?.slice(0, 8) || "-")}</span><br><small class="muted">${esc(warehouse?.name || "Unknown warehouse")} / ${esc(location?.name || item.location_id?.slice(0, 8) || "Unknown location")}</small></td><td>${esc(product?.unit_cost ?? 0)}</td><td>${esc(item.on_hand_quantity)} <button class="button button-quiet" data-stock-update="true" data-product-id="${esc(item.product_id)}" data-location-id="${esc(item.location_id)}" data-product-name="${esc(product?.name || "Stock item")}" data-location-name="${esc(`${warehouse?.name || "Warehouse"} / ${location?.name || "Location"}`)}" data-on-hand="${esc(item.on_hand_quantity)}">Update</button></td><td class="${available <= 0 ? "stock-negative" : "stock-positive"}">${esc(item.free_to_use)}</td></tr>`;
+    const updateControl = item.location_id ? `<button class="button button-quiet" data-stock-update="true" data-product-id="${esc(item.product_id)}" data-location-id="${esc(item.location_id)}" data-product-name="${esc(product?.name || "Stock item")}" data-location-name="${esc(`${warehouse?.name || "Warehouse"} / ${location?.name || "Location"}`)}" data-on-hand="${esc(item.on_hand_quantity)}">Update</button>` : `<span class="muted">No balance</span>`;
+    return `<tr data-search="${esc(`${product?.sku || ""} ${product?.name || ""} ${warehouse?.name || ""} ${location?.name || ""}`)}"><td><strong>${esc(product?.name || "Unknown product")}</strong><br><span class="muted">${esc(product?.sku || item.product_id?.slice(0, 8) || "-")}</span><br><small class="muted">${esc(warehouse?.name || "No warehouse")} / ${esc(location?.name || "No location")}</small></td><td>${esc(product?.unit_cost ?? 0)}</td><td>${esc(item.on_hand_quantity)} ${updateControl}</td><td class="${available <= 0 ? "stock-negative" : "stock-positive"}">${esc(item.free_to_use)}</td></tr>`;
   });
-  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">Stock catalogue</div><div class="muted">Inventory balances by warehouse and location</div></div><div class="toolbar-right"><input class="search" id="product-search" placeholder="Search product, warehouse, or location"><button class="button button-dark" data-action="new-product">+ New stock item</button></div></div><section class="panel"><div class="panel-head"><div><h2>Stock catalogue</h2><span class="muted">${rows.length} stock balance(s)</span></div></div>${table(["Product", "Per unit cost", "On hand (units)", "Free to use (units)"], rows, "No stock records yet. Add stock or validate a receipt to begin tracking inventory.")}</section>`;
+  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">Stock catalogue</div><div class="muted">Inventory balances by warehouse and location</div></div><div class="toolbar-right"><input class="search" id="product-search" placeholder="Search product, warehouse, or location"><button class="button" data-action="quick-stock">+ Add stock</button><button class="button button-dark" data-action="new-product">+ New stock item</button></div></div><section class="panel"><div class="panel-head"><div><h2>Stock catalogue</h2><span class="muted">${rows.length} stock balance(s)</span></div></div>${table(["Product", "Per unit cost", "On hand (units)", "Free to use (units)"], rows, "No stock records yet. Add stock or validate a receipt to begin tracking inventory.")}</section>`;
   $("#product-search").addEventListener("input", (event) => { const query = event.target.value.toLowerCase(); document.querySelectorAll(".data-table tbody tr").forEach((row) => { row.hidden = !row.dataset.search.toLowerCase().includes(query); }); });
 }
 
@@ -104,15 +105,20 @@ async function renderStock() {
     const location = state.locations.find((entry) => entry.id === item.location_id);
     const warehouse = state.warehouses.find((entry) => entry.id === location?.warehouse_id);
     const available = Number(item.free_to_use || 0);
-    return `<tr data-search="${esc(`${product?.sku || ""} ${product?.name || ""} ${warehouse?.name || ""} ${location?.name || ""}`)}"><td><strong>${esc(product?.name || "Unknown product")}</strong><br><span class="muted">${esc(product?.sku || item.product_id?.slice(0, 8) || "-")}</span><br><small class="muted">${esc(warehouse?.name || "Unknown warehouse")} / ${esc(location?.name || item.location_id?.slice(0, 8) || "Unknown location")}</small></td><td>${esc(product?.unit_cost ?? 0)}</td><td>${esc(item.on_hand_quantity)} <button class="button button-quiet" data-stock-update="true" data-product-id="${esc(item.product_id)}" data-location-id="${esc(item.location_id)}" data-product-name="${esc(product?.name || "Stock item")}" data-location-name="${esc(`${warehouse?.name || "Warehouse"} / ${location?.name || "Location"}`)}" data-on-hand="${esc(item.on_hand_quantity)}">Update</button></td><td class="${available <= 0 ? "stock-negative" : "stock-positive"}">${esc(item.free_to_use)}</td></tr>`;
+    const updateControl = item.location_id ? `<button class="button button-quiet" data-stock-update="true" data-product-id="${esc(item.product_id)}" data-location-id="${esc(item.location_id)}" data-product-name="${esc(product?.name || "Stock item")}" data-location-name="${esc(`${warehouse?.name || "Warehouse"} / ${location?.name || "Location"}`)}" data-on-hand="${esc(item.on_hand_quantity)}">Update</button>` : `<span class="muted">No balance</span>`;
+    return `<tr data-search="${esc(`${product?.sku || ""} ${product?.name || ""} ${warehouse?.name || ""} ${location?.name || ""}`)}"><td><strong>${esc(product?.name || "Unknown product")}</strong><br><span class="muted">${esc(product?.sku || item.product_id?.slice(0, 8) || "-")}</span><br><small class="muted">${esc(warehouse?.name || "No warehouse")} / ${esc(location?.name || "No location")}</small></td><td>${esc(product?.unit_cost ?? 0)}</td><td>${esc(item.on_hand_quantity)} ${updateControl}</td><td class="${available <= 0 ? "stock-negative" : "stock-positive"}">${esc(item.free_to_use)}</td></tr>`;
   });
-  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">Stock</div><div class="muted">Inventory balances by warehouse and location</div></div><div class="toolbar-right"><input class="search" id="stock-search" placeholder="Search product, warehouse, or location"><button class="button button-dark" data-action="quick-receipt">+ Receive stock</button></div></div><section class="panel"><div class="panel-head"><div><h2>Stock by location</h2><span class="muted">Free to use is on-hand quantity minus reserved quantity.</span></div></div>${table(["Product", "Per unit cost", "On hand (units)", "Free to use (units)"], rows, "No stock records yet. Validate a receipt or receive stock into a location.")}</section>`;
+  $("#page").innerHTML = `<div class="page-toolbar"><div><div class="section-title">Stock</div><div class="muted">Inventory balances by warehouse and location</div></div><div class="toolbar-right"><input class="search" id="stock-search" placeholder="Search product, warehouse, or location"><button class="button button-dark" data-action="quick-stock">+ Add stock</button></div></div><section class="panel"><div class="panel-head"><div><h2>Stock by location</h2><span class="muted">Free to use is on-hand quantity minus reserved quantity.</span></div></div>${table(["Product", "Per unit cost", "On hand (units)", "Free to use (units)"], rows, "No stock records yet. Add stock or validate a receipt to begin tracking inventory.")}</section>`;
   $("#stock-search").addEventListener("input", (event) => { const query = event.target.value.toLowerCase(); document.querySelectorAll(".data-table tbody tr").forEach((row) => { row.hidden = !row.dataset.search.toLowerCase().includes(query); }); });
 }
 
 function openStockUpdateForm(button) {
   const { productId, locationId, productName, locationName, onHand } = button.dataset;
-  formDialog("Update stock", `<div class="callout wide">${esc(productName)}<br><span class="muted">${esc(locationName)}</span></div><label class="wide">On-hand quantity<input name="on_hand_quantity" type="number" min="0" step="0.001" value="${esc(onHand)}" required></label>`, async (data) => api(`/stock/${productId}/${locationId}`, { method: "PUT", body: JSON.stringify(Object.fromEntries(data)) }), async () => { await renderStock(); });
+  formDialog("Update stock", `<div class="callout wide">${esc(productName)}<br><span class="muted">${esc(locationName)}</span></div><label class="wide">On-hand quantity<input name="on_hand_quantity" type="number" min="0" step="0.001" value="${esc(onHand)}" required></label>`, async (data) => api(`/stock/${productId}/${locationId}`, { method: "PUT", body: JSON.stringify(Object.fromEntries(data)) }), async () => { await (state.view === "products" ? renderProducts() : renderStock()); });
+}
+
+function openStockReceiveForm() {
+  formDialog("Add stock", `<label>Stock item<select name="product_id" required><option value="">Select stock item</option>${optionList(state.products)}</select></label><label>Location<select name="location_id" required><option value="">Select location</option>${optionList(state.locations.filter((location) => location.warehouse_id === state.currentWarehouseId))}</select></label><label class="wide">Quantity<input name="quantity" type="number" min="0.001" step="0.001" required></label>`, async (data) => { const values = Object.fromEntries(data); return api(`/stock/${values.product_id}/${values.location_id}/receive`, { method: "POST", body: JSON.stringify({ quantity: values.quantity }) }); }, async () => { await (state.view === "products" ? renderProducts() : renderStock()); });
 }
 
 function renderWarehouses() {
@@ -253,7 +259,8 @@ function openOperationForm(type) {
   });
 }
 
-async function loadUser() { try { state.user = await api("/auth/me"); $("#user-name").textContent = state.user.login_id; $("#user-role").textContent = state.user.role; $("#user-avatar").textContent = state.user.login_id.slice(0, 1).toUpperCase(); $("#connection-status").textContent = "Database connected"; $("#connection-status").className = "connection-dot ok"; } catch { $("#connection-status").textContent = "Read-only mode"; $("#connection-status").className = "connection-dot"; } }
+function renderAccountActions() { const actions = $("#account-actions"); if (!actions) return; actions.innerHTML = state.user ? `<button class="button button-quiet" id="logout-button" title="Log out">Logout</button>` : `<button class="button button-quiet" data-action="auth">Login</button><button class="button button-dark" data-action="auth">Sign up</button>`; }
+async function loadUser() { try { state.user = await api("/auth/me"); $("#user-name").textContent = state.user.login_id; $("#user-role").textContent = state.user.role_label || (state.user.role === "ADMIN" ? "Inventory Manager" : "Warehouse Staff"); $("#user-avatar").textContent = state.user.login_id.slice(0, 1).toUpperCase(); $("#connection-status").textContent = "Database connected"; $("#connection-status").className = "connection-dot ok"; renderAccountActions(); } catch { state.user = null; $("#user-name").textContent = "Not signed in"; $("#user-role").textContent = "Connect your account"; $("#user-avatar").textContent = "?"; $("#connection-status").textContent = "Read-only mode"; $("#connection-status").className = "connection-dot"; renderAccountActions(); } }
 
 document.addEventListener("click", async (event) => {
   const kanbanToggle = event.target.closest("[data-toggle-kanban]");
@@ -315,6 +322,7 @@ document.addEventListener("click", async (event) => {
   if (action === "new-warehouse") return openWarehouseForm();
   if (action === "new-location") return openLocationForm();
   if (action === "quick-receipt") return openOperationForm("receipts");
+  if (action === "quick-stock") return openStockReceiveForm();
   if (action?.startsWith("new-")) return openOperationForm(action.slice(4));
   const stockUpdate = event.target.closest("[data-stock-update]");
   if (stockUpdate) return openStockUpdateForm(stockUpdate);
@@ -348,7 +356,7 @@ $("#request-reset").addEventListener("click", async () => {
   try {
     const result = await api("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email: form.get("email") }) });
     $(".reset-code-fields").classList.add("active"); $("#request-reset").hidden = true; $("#complete-reset").hidden = false;
-    $("#reset-message").textContent = result.development_otp ? `Development reset code: ${result.development_otp}` : result.message;
+    $("#reset-message").textContent = result.message;
   } catch (error) { notify(error.message, "error"); }
 });
 $("#reset-form").addEventListener("submit", async (event) => {

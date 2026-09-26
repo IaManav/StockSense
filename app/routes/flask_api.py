@@ -1,10 +1,11 @@
 from datetime import date, datetime, timedelta, timezone
 import secrets
 import re
+from functools import wraps
 from typing import Any
 from uuid import UUID
 
-from flask import Blueprint, current_app, jsonify, request, session
+from flask import Blueprint, jsonify, request, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,6 +17,7 @@ from app.models.adjustment import AdjustmentStatus
 from app.models.delivery import DeliveryStatus
 from app.models.receipt import ReceiptStatus
 from app.models.transfer import TransferStatus
+from app.services.email_service import EmailDeliveryError, send_password_reset_email
 from app.services.inventory_service import NotFoundError, decimal_value, get_or_create_stock, require, validate_adjustment, validate_delivery, validate_receipt, validate_transfer
 from app.validation import validate_email, validate_password
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -39,6 +41,8 @@ def data(model: Any) -> dict[str, Any]:
             continue
         value = getattr(model, column.name)
         result[column.name] = value.value if hasattr(value, "value") else value
+    if isinstance(model, User):
+        result["role_label"] = {"ADMIN": "Inventory Manager", "STAFF": "Warehouse Staff"}.get(result.get("role"), result.get("role"))
     return result
 
 
@@ -94,6 +98,20 @@ def logged_in_user() -> User | None:
     return db().get(User, UUID(user_id)) if user_id else None
 
 
+def role_required(*roles: str):
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            user = logged_in_user()
+            if user is None:
+                return fail("Authentication required", 401)
+            if user.role.value not in roles:
+                return fail("You do not have permission to perform this action", 403)
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
 @api_bp.post("/auth/signup")
 def signup():
     body = payload()
@@ -141,9 +159,12 @@ def forgot_password():
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
     )
     db().add(reset_code)
-    commit()
-    if current_app.debug:
-        response["development_otp"] = code
+    try:
+        send_password_reset_email(email, code)
+        commit()
+    except EmailDeliveryError as exc:
+        db().rollback()
+        return fail(str(exc), 503)
     return jsonify(response)
 
 
@@ -226,6 +247,7 @@ def change_current_password():
 
 
 @api_bp.post("/users")
+@role_required("ADMIN")
 def create_user():
     body = payload()
     required(body, "login_id", "email", "password_hash")
@@ -241,6 +263,7 @@ def list_warehouses():
 
 
 @api_bp.post("/warehouses")
+@role_required("ADMIN")
 def create_warehouse():
     body = payload()
     required(body, "name", "short_code")
@@ -269,6 +292,7 @@ def list_locations():
 
 
 @api_bp.post("/locations")
+@role_required("ADMIN")
 def create_location():
     body = payload()
     required(body, "warehouse_id", "name", "short_code")
@@ -288,6 +312,7 @@ def list_categories():
 
 
 @api_bp.post("/categories")
+@role_required("ADMIN")
 def create_category():
     body = payload()
     required(body, "name")
@@ -311,6 +336,7 @@ def list_products():
 
 
 @api_bp.post("/products")
+@role_required("ADMIN")
 def create_product():
     body = payload()
     required(body, "sku", "name")
@@ -327,17 +353,32 @@ def create_product():
 
 @api_bp.get("/stock")
 def list_stock():
-    query = select(Stock)
+    query = select(Product, Stock).outerjoin(Stock, Stock.product_id == Product.id)
     if product_id := request.args.get("product_id", type=UUID):
-        query = query.where(Stock.product_id == product_id)
+        query = query.where(Product.id == product_id)
     if location_id := request.args.get("location_id", type=UUID):
         query = query.where(Stock.location_id == location_id)
     if warehouse_id := request.args.get("warehouse_id", type=UUID):
         query = query.join(Location).where(Location.warehouse_id == warehouse_id)
-    return jsonify(items=[{**data(item), "free_to_use": item.free_to_use} for item in db().scalars(query).all()])
+    items = []
+    for product, stock in db().execute(query).all():
+        record = {
+            "id": str(stock.id) if stock else None,
+            "product_id": str(product.id),
+            "location_id": str(stock.location_id) if stock else None,
+            "on_hand_quantity": stock.on_hand_quantity if stock else 0,
+            "reserved_quantity": stock.reserved_quantity if stock else 0,
+            "free_to_use": stock.free_to_use if stock else 0,
+            "product_name": product.name,
+            "sku": product.sku,
+            "unit_cost": product.unit_cost,
+        }
+        items.append(record)
+    return jsonify(items=items)
 
 
 @api_bp.post("/stock/<uuid:product_id>/<uuid:location_id>/receive")
+@role_required("ADMIN", "STAFF")
 def receive_stock(product_id: UUID, location_id: UUID):
     body = payload()
     required(body, "quantity")
@@ -350,6 +391,7 @@ def receive_stock(product_id: UUID, location_id: UUID):
 
 
 @api_bp.put("/stock/<uuid:product_id>/<uuid:location_id>")
+@role_required("ADMIN", "STAFF")
 def update_stock(product_id: UUID, location_id: UUID):
     body = payload()
     required(body, "on_hand_quantity")
@@ -392,6 +434,7 @@ def create_operation(model: type, body: dict[str, Any]):
 
 
 @api_bp.post("/receipts")
+@role_required("ADMIN")
 def create_receipt():
     return create_operation(Receipt, payload())
 
@@ -449,6 +492,7 @@ def get_receipt(receipt_id: UUID):
 
 
 @api_bp.post("/receipts/<uuid:receipt_id>/cancel")
+@role_required("ADMIN")
 def cancel_receipt(receipt_id: UUID):
     receipt = get_required(Receipt, receipt_id, "Receipt")
     if not isinstance(receipt, Receipt):
@@ -461,6 +505,7 @@ def cancel_receipt(receipt_id: UUID):
 
 
 @api_bp.post("/deliveries")
+@role_required("ADMIN")
 def create_delivery():
     return create_operation(Delivery, payload())
 
@@ -514,6 +559,7 @@ def get_delivery(delivery_id: UUID):
 
 
 @api_bp.post("/deliveries/<uuid:delivery_id>/cancel")
+@role_required("ADMIN")
 def cancel_delivery(delivery_id: UUID):
     delivery = get_required(Delivery, delivery_id, "Delivery")
     if not isinstance(delivery, Delivery):
@@ -547,11 +593,13 @@ def add_operation_item(operation_model: type, item_model: type, operation_id: UU
 
 
 @api_bp.post("/receipts/<uuid:receipt_id>/items")
+@role_required("ADMIN")
 def add_receipt_item(receipt_id: UUID):
     return add_operation_item(Receipt, ReceiptItem, receipt_id, payload())
 
 
 @api_bp.post("/deliveries/<uuid:delivery_id>/items")
+@role_required("ADMIN", "STAFF")
 def add_delivery_item(delivery_id: UUID):
     return add_operation_item(Delivery, DeliveryItem, delivery_id, payload())
 
@@ -579,11 +627,13 @@ def mark_ready(model: type, operation_id: UUID):
 
 
 @api_bp.post("/receipts/<uuid:receipt_id>/ready")
+@role_required("ADMIN")
 def ready_receipt(receipt_id: UUID):
     return mark_ready(Receipt, receipt_id)
 
 
 @api_bp.post("/deliveries/<uuid:delivery_id>/ready")
+@role_required("ADMIN", "STAFF")
 def ready_delivery(delivery_id: UUID):
     return mark_ready(Delivery, delivery_id)
 
@@ -601,16 +651,19 @@ def validate_operation(model: type, operation_id: UUID, body: dict[str, Any]):
 
 
 @api_bp.post("/receipts/<uuid:receipt_id>/validate")
+@role_required("ADMIN")
 def validate_receipt_route(receipt_id: UUID):
     return validate_operation(Receipt, receipt_id, payload())
 
 
 @api_bp.post("/deliveries/<uuid:delivery_id>/validate")
+@role_required("ADMIN", "STAFF")
 def validate_delivery_route(delivery_id: UUID):
     return validate_operation(Delivery, delivery_id, payload())
 
 
 @api_bp.post("/transfers")
+@role_required("ADMIN", "STAFF")
 def create_transfer():
     body = payload()
     required(body, "reference", "from_location_id", "to_location_id", "responsible_id")
@@ -634,6 +687,7 @@ def list_transfers():
 
 
 @api_bp.post("/transfers/<uuid:transfer_id>/items")
+@role_required("ADMIN", "STAFF")
 def add_transfer_item(transfer_id: UUID):
     body = payload()
     transfer = get_required(StockTransfer, transfer_id, "Transfer")
@@ -652,6 +706,7 @@ def add_transfer_item(transfer_id: UUID):
 
 
 @api_bp.post("/transfers/<uuid:transfer_id>/ready")
+@role_required("ADMIN", "STAFF")
 def ready_transfer(transfer_id: UUID):
     transfer = get_required(StockTransfer, transfer_id, "Transfer")
     if not isinstance(transfer, StockTransfer):
@@ -664,6 +719,7 @@ def ready_transfer(transfer_id: UUID):
 
 
 @api_bp.post("/transfers/<uuid:transfer_id>/validate")
+@role_required("ADMIN", "STAFF")
 def validate_transfer_route(transfer_id: UUID):
     body = payload()
     required(body, "created_by")
@@ -677,6 +733,7 @@ def validate_transfer_route(transfer_id: UUID):
 
 
 @api_bp.post("/adjustments")
+@role_required("ADMIN", "STAFF")
 def create_adjustment():
     body = payload()
     required(body, "reference", "warehouse_id", "location_id", "responsible_id")
@@ -696,6 +753,7 @@ def list_adjustments():
 
 
 @api_bp.post("/adjustments/<uuid:adjustment_id>/items")
+@role_required("ADMIN", "STAFF")
 def add_adjustment_item(adjustment_id: UUID):
     body = payload()
     adjustment = get_required(StockAdjustment, adjustment_id, "Adjustment")
@@ -716,6 +774,7 @@ def add_adjustment_item(adjustment_id: UUID):
 
 
 @api_bp.post("/adjustments/<uuid:adjustment_id>/validate")
+@role_required("ADMIN", "STAFF")
 def validate_adjustment_route(adjustment_id: UUID):
     body = payload()
     required(body, "created_by")
