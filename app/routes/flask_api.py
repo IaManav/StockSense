@@ -266,19 +266,7 @@ def list_locations():
     query = select(Location).order_by(Location.name)
     if warehouse_id:
         query = query.where(Location.warehouse_id == warehouse_id)
-    items = []
-    for item in db().scalars(query).all():
-        record = data(item)
-        contact = db().get(User, item.created_by)
-        from_location = db().get(Location, item.from_location_id) if item.from_location_id else None
-        to_location = db().get(Location, item.to_location_id) if item.to_location_id else None
-        record["date"] = item.created_at
-        record["contact"] = contact.login_id if contact else str(item.created_by)
-        record["from"] = from_location.short_code if from_location else "-"
-        record["to"] = to_location.short_code if to_location else "-"
-        record["status"] = item.move_type.value
-        items.append(record)
-    return jsonify(items=items)
+    return jsonify(items=[data(item) for item in db().scalars(query).all()])
 
 
 @api_bp.post("/locations")
@@ -748,7 +736,19 @@ def list_ledger():
         query = query.where(StockMove.product_id == product_id)
     if location_id := request.args.get("location_id", type=UUID):
         query = query.where((StockMove.from_location_id == location_id) | (StockMove.to_location_id == location_id))
-    return jsonify(items=[data(item) for item in db().scalars(query).all()])
+    items = []
+    for item in db().scalars(query).all():
+        record = data(item)
+        contact = db().get(User, item.created_by)
+        from_location = db().get(Location, item.from_location_id) if item.from_location_id else None
+        to_location = db().get(Location, item.to_location_id) if item.to_location_id else None
+        record["date"] = item.created_at
+        record["contact"] = contact.login_id if contact else str(item.created_by)
+        record["from"] = from_location.short_code if from_location else "-"
+        record["to"] = to_location.short_code if to_location else "-"
+        record["status"] = item.move_type.value
+        items.append(record)
+    return jsonify(items=items)
 
 
 @api_bp.get("/dashboard/summary")
