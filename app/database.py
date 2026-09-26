@@ -1,24 +1,16 @@
-import os
-
-from dotenv import load_dotenv
 from flask import g
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
+from app.config import database_url as get_database_url
 
-load_dotenv()
 
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not configured")
+DATABASE_URL = get_database_url()
 
 
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
 )
 
 
@@ -38,6 +30,11 @@ def get_db():
         g.db = SessionLocal()
 
     return g.db
+
+
+def init_app(app) -> None:
+    """Register database cleanup with the Flask application."""
+    app.teardown_appcontext(close_db)
 
 
 def close_db(exception=None):

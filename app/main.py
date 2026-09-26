@@ -1,12 +1,18 @@
 from flask import Flask
 
-from app.routes.products import product_bp
+from app.config import secret_key
+from app.database import init_app
+from app.routes.flask_api import api_bp
 
 
 def create_app():
     app = Flask(__name__)
+    app.config.from_mapping(
+        SECRET_KEY=secret_key(),
+    )
 
-    app.register_blueprint(product_bp)
+    init_app(app)
+    app.register_blueprint(api_bp, url_prefix="/api")
 
     @app.get("/")
     def root():

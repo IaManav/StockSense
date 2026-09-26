@@ -2,12 +2,12 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from flask import Blueprint, g, jsonify, request, session
+from flask import Blueprint, jsonify, request, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.database import get_db
 from app.models import Category, Delivery, DeliveryItem, Location, Product, Receipt, ReceiptItem, Stock, StockAdjustment, StockAdjustmentItem, StockMove, User, Warehouse
 from app.models import StockTransfer, TransferItem
 from app.models.adjustment import AdjustmentStatus
@@ -21,23 +21,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 api_bp = Blueprint("api", __name__)
 
 
-@api_bp.before_request
-def open_session() -> None:
-    g.db = SessionLocal()
-
-
-@api_bp.teardown_request
-def close_session(error: BaseException | None) -> None:
-    db: Session | None = g.pop("db", None)
-    if db is None:
-        return
-    if error is not None:
-        db.rollback()
-    db.close()
-
-
 def db() -> Session:
-    return g.db
+    return get_db()
 
 
 def payload() -> dict[str, Any]:
