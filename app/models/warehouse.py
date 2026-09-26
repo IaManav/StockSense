@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import String, Text
+from sqlalchemy import String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey
 from app.database import Base
@@ -43,6 +43,10 @@ class Warehouse(Base):
 
 class Location(Base):
     __tablename__ = "locations"
+    __table_args__ = (
+        UniqueConstraint("warehouse_id", "name", name="uq_location_warehouse_name"),
+        UniqueConstraint("warehouse_id", "short_code", name="uq_location_warehouse_short_code"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

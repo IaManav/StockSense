@@ -297,10 +297,18 @@ def create_location():
     body = payload()
     required(body, "warehouse_id", "name", "short_code")
     warehouse_id = as_uuid(body["warehouse_id"], "warehouse_id")
+    name = str(body["name"]).strip()
+    short_code = str(body["short_code"]).strip().upper()
     result = get_required(Warehouse, warehouse_id, "Warehouse")
     if not isinstance(result, Warehouse):
         return result
-    location = Location(warehouse_id=warehouse_id, name=body["name"], short_code=body["short_code"].upper())
+    duplicate_name = db().scalar(select(Location).where(Location.warehouse_id == warehouse_id, func.lower(Location.name) == name.lower()))
+    if duplicate_name:
+        return fail("A location with this name already exists in the selected warehouse", 409)
+    duplicate_code = db().scalar(select(Location).where(Location.warehouse_id == warehouse_id, Location.short_code == short_code))
+    if duplicate_code:
+        return fail("A location with this shortcut code already exists in the selected warehouse", 409)
+    location = Location(warehouse_id=warehouse_id, name=name, short_code=short_code)
     db().add(location)
     commit()
     return jsonify(data(location)), 201

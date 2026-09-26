@@ -55,9 +55,17 @@ Login ID: demo01
 Password: Demo123!
 ```
 
-The demo account includes a main warehouse, receiving/rack/production
-locations, three products, stock quantities, a completed receipt, a ready
-delivery, a ready internal transfer, a draft adjustment, and ledger entries.
+Warehouse staff demo:
+
+```text
+Login ID: staff01
+Password: Staff123!
+```
+
+The demo data includes two warehouses, receiving/storage/production/dispatch
+locations, varied products and stock levels, reserved and out-of-stock items,
+draft/ready/waiting/done receipts and deliveries, transfers, adjustments, and
+ledger movements so each major workflow is visible in the UI.
 
 ## Using the app
 
