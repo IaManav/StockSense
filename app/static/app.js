@@ -97,7 +97,26 @@ function renderProfile() {
   const user = state.user; $("#page").innerHTML = `<section class="panel"><div class="panel-head"><div><div class="eyebrow">ACCOUNT</div><h2 class="section-title">My profile</h2></div></div><div class="panel-body">${user ? `<div class="cards"><div class="mini-card"><span class="muted">Login ID</span><strong>${esc(user.login_id)}</strong></div><div class="mini-card"><span class="muted">Email</span><strong>${esc(user.email)}</strong></div><div class="mini-card"><span class="muted">Role</span><strong>${esc(user.role)}</strong></div></div>` : `<div class="callout">You are browsing in read-only mode. Sign in to create operations and manage your profile.</div><br><button class="button button-dark" data-action="auth">Sign in</button>`}</div></section>`;
 }
 
-function openDialog(mode = "signin") { const dialog = $("#auth-dialog"); dialog.classList.toggle("auth-signup", mode === "signup"); $("#auth-title").textContent = mode === "signup" ? "Create account" : "Sign in"; $("#auth-switch").textContent = mode === "signup" ? "I already have an account" : "Create account"; dialog.dataset.mode = mode; dialog.showModal(); }
+function openDialog(mode = "signin") {
+  const dialog = $("#auth-dialog");
+  const signup = mode === "signup";
+  const email = dialog.querySelector("[name=email]");
+  const confirm = dialog.querySelector("[name=confirm_password]");
+  const password = dialog.querySelector("[name=password]");
+  dialog.classList.toggle("auth-signup", signup);
+  $("#auth-title").textContent = signup ? "Create account" : "Sign in";
+  $("#auth-switch").textContent = signup ? "I already have an account" : "Create account";
+  email.required = signup; confirm.required = signup;
+  if (signup) {
+    password.minLength = 8;
+    password.pattern = "(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}";
+    password.title = "Use at least 8 characters with an uppercase letter, number, and special character.";
+    password.autocomplete = "new-password";
+  } else {
+    password.removeAttribute("minlength"); password.removeAttribute("pattern"); password.removeAttribute("title"); password.autocomplete = "current-password";
+  }
+  dialog.dataset.mode = mode; dialog.showModal();
+}
 
 function formDialog(title, content, submit) { const dialog = document.createElement("dialog"); dialog.className = "modal"; dialog.innerHTML = `<div class="modal-head"><div><div class="eyebrow">NEW RECORD</div><h2>${title}</h2></div><button class="icon-button" data-close-dialog>×</button></div><form class="form-grid">${content}<div class="form-actions"><button type="button" class="button button-quiet" data-close-dialog>Cancel</button><button class="button button-dark">Create</button></div></form>`; document.body.append(dialog); dialog.showModal(); dialog.querySelector("form").addEventListener("submit", async (event) => { event.preventDefault(); try { await submit(new FormData(event.target)); dialog.close(); dialog.remove(); notify(`${title} created`); render(); } catch (error) { notify(error.message, "error"); } }); dialog.addEventListener("close", () => dialog.remove()); }
 

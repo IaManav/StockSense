@@ -15,6 +15,7 @@ from app.models.delivery import DeliveryStatus
 from app.models.receipt import ReceiptStatus
 from app.models.transfer import TransferStatus
 from app.services.inventory_service import NotFoundError, decimal_value, get_or_create_stock, require, validate_adjustment, validate_delivery, validate_receipt, validate_transfer
+from app.validation import validate_email, validate_password
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -98,7 +99,8 @@ def signup():
     login_id = body["login_id"].strip()
     if not 6 <= len(login_id) <= 12:
         return fail("login_id must be 6-12 characters", 422)
-    email = body["email"].strip().lower()
+    email = validate_email(body["email"])
+    validate_password(body["password"])
     if db().scalar(select(User).where((User.login_id == login_id) | (User.email == email))):
         return fail("login_id or email already exists", 409)
     user = User(login_id=login_id, email=email, password_hash=generate_password_hash(body["password"]))
@@ -147,7 +149,7 @@ def update_current_user():
             return fail("login_id already exists", 409)
         user.login_id = login_id
     if "email" in body:
-        email = body["email"].strip().lower()
+        email = validate_email(body["email"])
         existing = db().scalar(select(User).where(User.email == email, User.id != user.id))
         if existing:
             return fail("email already exists", 409)
@@ -165,7 +167,7 @@ def change_current_password():
     required(body, "old_password", "new_password")
     if not check_password_hash(user.password_hash, body["old_password"]):
         return fail("Current password is incorrect", 403)
-    user.password_hash = generate_password_hash(body["new_password"])
+    user.password_hash = generate_password_hash(validate_password(body["new_password"]))
     commit()
     return jsonify(message="Password updated")
 
@@ -174,7 +176,7 @@ def change_current_password():
 def create_user():
     body = payload()
     required(body, "login_id", "email", "password_hash")
-    user = User(login_id=body["login_id"].strip(), email=body["email"].strip().lower(), password_hash=body["password_hash"], role=body.get("role", "STAFF"))
+    user = User(login_id=body["login_id"].strip(), email=validate_email(body["email"]), password_hash=body["password_hash"], role=body.get("role", "STAFF"))
     db().add(user)
     commit()
     return jsonify(data(user)), 201

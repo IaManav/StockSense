@@ -3,10 +3,12 @@ from sqlalchemy.orm import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.models import User
+from app.validation import validate_email, validate_password
 
 
 def signup(db: Session, login_id: str, email: str, password: str) -> User:
-    login_id, email = login_id.strip(), email.strip().lower()
+    login_id, email = login_id.strip(), validate_email(email)
+    validate_password(password)
     if not 6 <= len(login_id) <= 12:
         raise ValueError("login_id must be 6-12 characters")
     if db.scalar(select(User).where((User.login_id == login_id) | (User.email == email))):

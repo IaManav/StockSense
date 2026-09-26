@@ -45,9 +45,9 @@
     <div class="modal-head"><div><div class="eyebrow">ACCOUNT</div><h2 id="auth-title">Sign in</h2></div><button class="icon-button" data-close-dialog>×</button></div>
     <form id="auth-form" class="form-grid">
       <label>Login ID<input name="login_id" required minlength="6" maxlength="12"></label>
-      <label class="signup-only">Email<input name="email" type="email"></label>
-      <label>Password<input name="password" type="password" required></label>
-      <label class="signup-only">Confirm password<input name="confirm_password" type="password"></label>
+      <label class="signup-only">Email<input name="email" type="email" autocomplete="email"></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required><small class="password-help">Use 8+ characters with an uppercase letter, number, and symbol.</small></label>
+      <label class="signup-only">Confirm password<input name="confirm_password" type="password" autocomplete="new-password"></label>
       <div class="form-actions"><button type="button" class="button button-quiet" id="auth-switch">Create account</button><button class="button button-dark" type="submit">Continue</button></div>
     </form>
   </dialog>

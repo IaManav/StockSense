@@ -74,3 +74,9 @@ delivery, a ready internal transfer, a draft adjustment, and ledger entries.
 Operations follow the intended workflow: create a document, add its product
 lines, mark it Ready, then validate it. Validation is the point at which stock
 and the ledger are updated.
+
+## Account validation
+
+Signup and password changes require a valid email address and a password with
+at least 8 characters, one uppercase letter, one number, and one special
+character. These rules are enforced by the API as well as the browser form.
