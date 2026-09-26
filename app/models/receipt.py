@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import date
-
+from decimal import Decimal
 from sqlalchemy import (
     String,
     Date,
@@ -83,7 +83,7 @@ class ReceiptItem(Base):
         nullable=False
     )
 
-    quantity: Mapped[DECIMAL] = mapped_column(
+    quantity: Mapped[Decimal] = mapped_column(
         Numeric(14, 3),
         nullable=False
     )

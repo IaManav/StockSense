@@ -1,15 +1,18 @@
 import os
 
 from dotenv import load_dotenv
+from flask import g
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
+
 load_dotenv()
+
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set")
+    raise RuntimeError("DATABASE_URL is not configured")
 
 
 engine = create_engine(
@@ -30,9 +33,14 @@ class Base(DeclarativeBase):
 
 
 def get_db():
-    db = SessionLocal()
+    if "db" not in g:
+        g.db = SessionLocal()
 
-    try:
-        yield db
-    finally:
+    return g.db
+
+
+def close_db(exception=None):
+    db = g.pop("db", None)
+
+    if db is not None:
         db.close()
