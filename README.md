@@ -75,6 +75,11 @@ Operations follow the intended workflow: create a document, add its product
 lines, mark it Ready, then validate it. Validation is the point at which stock
 and the ledger are updated.
 
+For local password recovery, click `Forgot password?` on the Login card, enter
+the account email, and request a code. In Flask debug mode the development OTP
+is shown in the reset dialog. In production, connect that endpoint to your
+email provider instead of exposing the OTP.
+
 ## Account validation
 
 Signup and password changes require a valid email address and a password with

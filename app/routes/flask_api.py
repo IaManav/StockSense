@@ -1,15 +1,16 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+import secrets
 from typing import Any
 from uuid import UUID
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, current_app, jsonify, request, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Category, Delivery, DeliveryItem, Location, Product, Receipt, ReceiptItem, Stock, StockAdjustment, StockAdjustmentItem, StockMove, User, Warehouse
-from app.models import StockTransfer, TransferItem
+from app.models import PasswordResetCode, StockTransfer, TransferItem
 from app.models.adjustment import AdjustmentStatus
 from app.models.delivery import DeliveryStatus
 from app.models.receipt import ReceiptStatus
@@ -101,8 +102,10 @@ def signup():
         return fail("login_id must be 6-12 characters", 422)
     email = validate_email(body["email"])
     validate_password(body["password"])
-    if db().scalar(select(User).where((User.login_id == login_id) | (User.email == email))):
-        return fail("login_id or email already exists", 409)
+    if db().scalar(select(User).where(User.login_id == login_id)):
+        return fail("Login ID already exists. Choose a different Login ID.", 409)
+    if db().scalar(select(User).where(User.email == email)):
+        return fail("Email already exists. Use a different email address.", 409)
     user = User(login_id=login_id, email=email, password_hash=generate_password_hash(body["password"]))
     db().add(user)
     commit()
@@ -116,9 +119,59 @@ def login():
     required(body, "login_id", "password")
     user = db().scalar(select(User).where(User.login_id == body["login_id"].strip()))
     if user is None or not check_password_hash(user.password_hash, body["password"]):
-        return fail("Invalid login credentials", 401)
+        return fail("Invalid login ID or password. Check your credentials and try again.", 401)
     session["user_id"] = str(user.id)
     return jsonify(data(user))
+
+
+@api_bp.post("/auth/forgot-password")
+def forgot_password():
+    body = payload()
+    required(body, "email")
+    email = validate_email(body["email"])
+    user = db().scalar(select(User).where(User.email == email))
+    response = {"message": "If an account exists, a password reset code has been created."}
+    if user is None:
+        return jsonify(response)
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    reset_code = PasswordResetCode(
+        email=email,
+        code_hash=generate_password_hash(code),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+    )
+    db().add(reset_code)
+    commit()
+    if current_app.debug:
+        response["development_otp"] = code
+    return jsonify(response)
+
+
+@api_bp.post("/auth/reset-password")
+def reset_password():
+    body = payload()
+    required(body, "email", "otp", "new_password")
+    email = validate_email(body["email"])
+    new_password = validate_password(body["new_password"])
+    now = datetime.now(timezone.utc)
+    reset_code = db().scalar(
+        select(PasswordResetCode)
+        .where(
+            PasswordResetCode.email == email,
+            PasswordResetCode.used_at.is_(None),
+            PasswordResetCode.expires_at > now,
+        )
+        .order_by(PasswordResetCode.created_at.desc())
+    )
+    if reset_code is None or not check_password_hash(reset_code.code_hash, str(body["otp"]).strip()):
+        return fail("Invalid or expired password reset code", 400)
+    user = db().scalar(select(User).where(User.email == email))
+    if user is None:
+        return fail("Invalid or expired password reset code", 400)
+    user.password_hash = generate_password_hash(new_password)
+    reset_code.used_at = now
+    commit()
+    return jsonify(message="Password reset successful")
 
 
 @api_bp.post("/auth/logout")

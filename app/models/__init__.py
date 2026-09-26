@@ -8,5 +8,6 @@ from .stock_move import StockMove
 from .adjustment import StockAdjustment,StockAdjustmentItem
 from .category import Category
 from .transfer import StockTransfer, TransferItem
+from .password_reset import PasswordResetCode
 
 from .category import Category

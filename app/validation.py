@@ -20,6 +20,8 @@ def validate_password(value: str) -> str:
         missing.append("at least 8 characters")
     if not re.search(r"[A-Z]", password):
         missing.append("one uppercase letter")
+    if not re.search(r"[a-z]", password):
+        missing.append("one lowercase letter")
     if not re.search(r"\d", password):
         missing.append("one number")
     if not re.search(r"[^A-Za-z0-9]", password):

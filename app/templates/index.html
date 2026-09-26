@@ -6,16 +6,15 @@
   <title>StockSense - Inventory</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='nav.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <div class="brand"><span class="brand-mark">S</span><span>StockSense</span></div>
-      <div class="workspace-label">INVENTORY CONTROL</div>
       <nav class="nav-list" aria-label="Primary navigation">
         <button class="nav-item active" data-view="dashboard"><span class="nav-icon">▦</span>Dashboard</button>
         <button class="nav-item" data-view="products"><span class="nav-icon">□</span>Stocks</button>
-        <div class="nav-section">Operations</div>
         <button class="nav-item menu-toggle" data-menu-toggle="operations" aria-expanded="true"><span class="nav-icon">⌄</span><span>Operations</span></button>
         <div class="nav-submenu open" data-submenu="operations">
           <button class="nav-item nav-subitem" data-view="receipts"><span class="nav-icon">↓</span>Receipts</button>
@@ -24,8 +23,11 @@
         </div>
         <button class="nav-item" data-view="transfers"><span class="nav-icon">⇄</span>Internal transfers</button>
         <button class="nav-item" data-view="ledger"><span class="nav-icon">≡</span>Move history</button>
-        <div class="nav-section">Configuration</div>
-        <button class="nav-item" data-view="warehouses"><span class="nav-icon">⌂</span>Warehouses</button>
+        <button class="nav-item menu-toggle" data-menu-toggle="settings" aria-expanded="true"><span class="nav-icon">⌄</span><span>Settings</span></button>
+        <div class="nav-submenu open" data-submenu="settings">
+          <button class="nav-item nav-subitem" data-view="warehouses"><span class="nav-icon">⌂</span>Warehouses</button>
+          <button class="nav-item nav-subitem" data-view="locations"><span class="nav-icon">⌖</span>Locations</button>
+        </div>
         <button class="nav-item" data-view="profile"><span class="nav-icon">○</span>Profile</button>
       </nav>
       <div class="sidebar-footer">
@@ -45,14 +47,42 @@
     </main>
   </div>
 
-  <dialog id="auth-dialog" class="modal">
-    <div class="modal-head"><div><div class="eyebrow">ACCOUNT</div><h2 id="auth-title">Sign in</h2></div><button class="icon-button" data-close-dialog>×</button></div>
-    <form id="auth-form" class="form-grid">
-      <label>Login ID<input name="login_id" required minlength="6" maxlength="12"></label>
-      <label class="signup-only">Email<input name="email" type="email" autocomplete="email"></label>
-      <label>Password<input name="password" type="password" autocomplete="current-password" required><small class="signup-only password-help">Use 8+ characters with an uppercase letter, number, and symbol.</small></label>
-      <label class="signup-only">Confirm password<input name="confirm_password" type="password" autocomplete="new-password"></label>
-      <div class="form-actions"><button type="button" class="button button-quiet" id="auth-switch">Create account</button><button class="button button-dark" type="submit">Continue</button></div>
+  <dialog id="auth-dialog" class="modal auth-dialog">
+    <button class="icon-button auth-close" data-close-dialog aria-label="Close">×</button>
+    <div class="auth-brand"><span class="brand-mark">S</span><span>StockSense</span></div>
+    <div class="auth-cards">
+      <section class="auth-card">
+        <div class="eyebrow">WELCOME BACK</div><h2>Sign in</h2><p class="muted">Access your inventory workspace.</p>
+        <form id="login-form" class="form-grid">
+          <label class="wide">Login ID<input name="login_id" required minlength="6" maxlength="12" autocomplete="username"></label>
+          <label class="wide">Password<input name="password" type="password" autocomplete="current-password" required></label>
+          <button type="button" class="button button-quiet auth-link" id="forgot-password">Forgot password?</button>
+          <button class="button button-dark wide" type="submit">Sign in</button>
+        </form>
+      </section>
+      <section class="auth-card auth-card-signup">
+        <div class="eyebrow">NEW ACCOUNT</div><h2>Sign up</h2><p class="muted">Create an account to manage stock.</p>
+        <form id="signup-form" class="form-grid">
+          <label class="wide">Login ID<input name="login_id" required minlength="6" maxlength="12" autocomplete="username"></label>
+          <label class="wide">Email<input name="email" type="email" autocomplete="email" required></label>
+          <label class="wide">Password<input name="password" type="password" autocomplete="new-password" required minlength="8" pattern="(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}" title="Use at least 8 characters with uppercase, lowercase, number, and special character."><small class="password-help">8+ characters, uppercase, lowercase, number, and symbol.</small></label>
+          <label class="wide">Confirm password<input name="confirm_password" type="password" autocomplete="new-password" required></label>
+          <button class="button button-dark wide" type="submit">Create account</button>
+        </form>
+      </section>
+    </div>
+  </dialog>
+  <dialog id="reset-dialog" class="modal">
+    <div class="modal-head"><div><div class="eyebrow">ACCOUNT RECOVERY</div><h2>Reset password</h2></div><button class="icon-button" data-close-dialog>×</button></div>
+    <form id="reset-form" class="form-grid">
+      <label class="wide">Account email<input name="email" type="email" autocomplete="email" required></label>
+      <div class="wide callout" id="reset-message">Request a one-time reset code. It expires after 10 minutes.</div>
+      <div class="reset-code-fields wide">
+        <label>Reset code<input name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"></label>
+        <label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="8"><small class="password-help">Use 8+ characters with an uppercase letter, lowercase letter, number, and symbol.</small></label>
+        <label>Confirm password<input name="confirm_password" type="password" autocomplete="new-password"></label>
+      </div>
+      <div class="form-actions"><button type="button" class="button button-quiet" data-close-dialog>Cancel</button><button type="button" class="button button-dark" id="request-reset">Request code</button><button type="submit" class="button button-dark" id="complete-reset" hidden>Reset password</button></div>
     </form>
   </dialog>
   <script src="{{ url_for('static', filename='app.js') }}"></script>

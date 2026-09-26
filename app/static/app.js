@@ -36,7 +36,7 @@ function setPageMeta(title) { $("#page-title").textContent = title; $("#breadcru
 function setActive(view) { document.querySelectorAll(".nav-item").forEach((node) => node.classList.toggle("active", node.dataset.view === view)); }
 
 async function render(view = state.view) {
-  state.view = view; setActive(view); const title = view === "ledger" ? "Move history" : pretty(view); setPageMeta(title);
+  state.view = view; setActive(view); const title = view === "ledger" ? "Move history" : view === "products" ? "Stocks" : pretty(view); setPageMeta(title);
   const page = $("#page"); page.innerHTML = `<div class="empty">Loading ${esc(title.toLowerCase())}...</div>`;
   try {
     await loadReferenceData();
@@ -44,6 +44,7 @@ async function render(view = state.view) {
     if (view === "products") return renderProducts();
     if (view === "stock") return renderStock();
     if (view === "warehouses") return renderWarehouses();
+    if (view === "locations") return renderLocations();
     if (view === "ledger") return renderLedger();
     if (["receipts", "deliveries", "transfers", "adjustments"].includes(view)) return renderOperations(view);
     if (view === "profile") return renderProfile();
@@ -51,16 +52,24 @@ async function render(view = state.view) {
 }
 
 async function renderDashboard() {
-  const [summary, ledger] = await Promise.all([api("/dashboard/summary"), api("/ledger")]);
-  const metrics = [["Products in stock", summary.total_products, ""], ["Low stock items", summary.low_stock_items, "warning"], ["Out of stock", summary.out_of_stock_items, "alert"], ["Pending receipts", summary.pending_receipts, ""], ["Pending deliveries", summary.pending_deliveries, ""]];
-  const rows = (ledger.items || []).slice(0, 8).map((item) => `<tr><td><strong>${esc(item.reference)}</strong></td><td>${esc(item.product_id?.slice(0, 8) || "-")}</td><td>${esc(item.quantity)}</td><td>${status(item.move_type)}</td><td>${esc(item.created_by?.slice(0, 8) || "-")}</td></tr>`);
-  $("#page").innerHTML = `<div class="dashboard-grid">${metrics.map(([label, value, cls]) => `<article class="metric-card"><div class="metric-label">${label}</div><div class="metric-value ${cls}">${value ?? 0}</div></article>`).join("")}</div>
-  <div class="content-grid"><section class="panel"><div class="panel-head"><h2>Recent stock movement</h2><button class="button button-quiet" data-view="ledger">View all →</button></div>${table(["Reference","Product","Quantity","Type","Created by"], rows, "No stock movements yet.")}</section><section class="panel"><div class="panel-head"><h2>Quick actions</h2></div><div class="panel-body quick-list"><button class="quick-link" data-view="products"><span>Add a product</span><b>→</b></button><button class="quick-link" data-action="quick-receipt"><span>Record incoming stock</span><b>→</b></button><button class="quick-link" data-view="transfers"><span>Move stock between locations</span><b>→</b></button><button class="quick-link" data-view="adjustments"><span>Adjust a physical count</span><b>→</b></button></div></section></div>`;
+  const [receipts, deliveries] = await Promise.all([api("/receipts"), api("/deliveries")]);
+  const today = new Date().toISOString().slice(0, 10);
+  const active = (item) => !["DONE", "CANCELLED"].includes(item.status);
+  const receiptItems = receipts.items || [];
+  const deliveryItems = deliveries.items || [];
+  const lateReceipts = receiptItems.filter((item) => active(item) && item.schedule_date && item.schedule_date < today);
+  const receiptOperations = receiptItems.filter((item) => active(item) && item.schedule_date && item.schedule_date > today);
+  const lateDeliveries = deliveryItems.filter((item) => active(item) && item.schedule_date && item.schedule_date < today);
+  const waitingDeliveries = deliveryItems.filter((item) => active(item) && item.status === "WAITING");
+  const deliveryOperations = deliveryItems.filter((item) => active(item) && item.schedule_date && item.schedule_date > today);
+  const operationRows = (items, detailKey) => items.map((item) => `<tr><td><strong>${esc(item.reference)}</strong></td><td>${esc(item[detailKey] || "-")}</td><td>${esc(item.schedule_date || "-")}</td><td>${status(item.status)}</td></tr>`);
+  const subsection = (title, description, counters, items, detailKey, emptyMessage) => `<section class="panel"><div class="panel-head"><div><h2>${title}</h2><span class="muted">${description}</span></div><button class="button button-quiet" data-view="${title.toLowerCase()}">View all →</button></div><div class="panel-body"><div class="cards">${counters.map(([label, value, cls]) => `<div class="mini-card"><span class="muted">${label}</span><strong class="${cls || ""}">${value}</strong></div>`).join("")}</div>${table(["Reference", title === "Receipts" ? "Receive from" : "Delivery address", "Schedule date", "Status"], operationRows(items, detailKey), emptyMessage)}</div></section>`;
+  $("#page").innerHTML = `<div class="content-grid"><div class="dashboard-column">${subsection("Receipts", "Incoming stock scheduled for the warehouse", [["Late items", lateReceipts.length, "stock-negative"], ["Operations", receiptOperations.length, ""]], [...lateReceipts, ...receiptOperations], "receive_from", "No receipt operations scheduled.")}</div><div class="dashboard-column">${subsection("Deliveries", "Outgoing stock and customer shipments", [["Late", lateDeliveries.length, "stock-negative"], ["Waiting", waitingDeliveries.length, "warning"], ["Operations", deliveryOperations.length, ""]], [...lateDeliveries, ...waitingDeliveries, ...deliveryOperations], "delivery_address", "No delivery operations scheduled.")}</div></div>`;
 }
 
 function renderProducts() {
   const rows = state.products.map((product) => `<tr><td><strong>${esc(product.sku)}</strong></td><td>${esc(product.name)}</td><td>${esc(state.categories.find((item) => item.id === product.category_id)?.name || "Uncategorised")}</td><td>${esc(product.unit || "piece")}</td><td>${esc(product.reorder_level ?? 0)}</td><td>${product.is_active ? status("Ready") : status("Cancelled")}</td></tr>`);
-  $("#page").innerHTML = `<div class="page-toolbar"><div class="toolbar-left"><input class="search" id="product-search" placeholder="Search by name or SKU" value=""></div><div class="toolbar-right"><button class="button button-dark" data-action="new-product">+ New product</button></div></div><section class="panel"><div class="panel-head"><div><h2 class="section-title">Product catalogue</h2><span class="muted">${state.products.length} products</span></div><button class="button" data-view="stock">View stock by location</button></div>${table(["SKU","Product","Category","Unit","Reorder level","Status"], rows, "No products yet. Add the first product to begin tracking stock.")}</section>`;
+  $("#page").innerHTML = `<div class="page-toolbar"><div class="toolbar-left"><input class="search" id="product-search" placeholder="Search by name or SKU" value=""></div><div class="toolbar-right"><button class="button button-dark" data-action="new-product">+ New stock item</button></div></div><section class="panel"><div class="panel-head"><div><h2 class="section-title">Stock catalogue</h2><span class="muted">${state.products.length} stock items</span></div><button class="button" data-view="stock">View stock by location</button></div>${table(["SKU","Stock item","Category","Unit","Reorder level","Status"], rows, "No stock items yet. Add the first stock item to begin tracking stock.")}</section>`;
   $("#product-search").addEventListener("input", (event) => { const query = event.target.value.toLowerCase(); document.querySelectorAll(".data-table tbody tr").forEach((row) => { row.hidden = !row.textContent.toLowerCase().includes(query); }); });
 }
 
@@ -80,6 +89,11 @@ function renderWarehouses() {
   $("#page").innerHTML = `<div class="page-toolbar"><div class="callout">Warehouses are the top-level stock containers. Add locations such as racks, rooms, or production floors inside each warehouse.</div><button class="button button-dark" data-action="new-warehouse">+ New warehouse</button></div><section class="panel">${table(["Warehouse","Short code","Address","Locations","Status"], rows, "No warehouses configured yet.")}</section>`;
 }
 
+function renderLocations() {
+  const rows = state.locations.map((location) => `<tr><td><strong>${esc(location.name)}</strong></td><td>${esc(location.short_code)}</td><td>${esc(state.warehouses.find((warehouse) => warehouse.id === location.warehouse_id)?.name || location.warehouse_id?.slice(0, 8) || "-")}</td><td><button class="button button-quiet" data-view="stock">View stock →</button></td></tr>`);
+  $("#page").innerHTML = `<div class="page-toolbar"><div class="callout">Locations represent racks, rooms, receiving areas, or production floors inside a warehouse.</div><button class="button button-dark" data-action="new-location">+ New location</button></div><section class="panel">${table(["Location","Short code","Warehouse",""], rows, "No locations configured yet.")}</section>`;
+}
+
 async function renderLedger() {
   const result = await api("/ledger"); const rows = (result.items || []).map((item) => `<tr><td><strong>${esc(item.reference)}</strong></td><td>${esc(item.product_id?.slice(0, 8) || "-")}</td><td>${esc(item.from_location_id?.slice(0, 8) || "-" )}</td><td>${esc(item.to_location_id?.slice(0, 8) || "-")}</td><td class="${item.move_type === "IN" ? "stock-positive" : "stock-negative"}">${item.move_type === "IN" ? "+" : "-"}${esc(item.quantity)}</td><td>${status(item.move_type)}</td></tr>`);
   $("#page").innerHTML = `<div class="page-toolbar"><div class="callout">Every validated receipt, delivery, transfer, and adjustment is recorded here. Incoming movements are shown in green; outgoing movements in red.</div></div><section class="panel">${table(["Reference","Product","From","To","Quantity","Movement"], rows, "No validated movements yet.")}</section>`;
@@ -97,31 +111,23 @@ function renderProfile() {
   const user = state.user; $("#page").innerHTML = `<section class="panel"><div class="panel-head"><div><div class="eyebrow">ACCOUNT</div><h2 class="section-title">My profile</h2></div></div><div class="panel-body">${user ? `<div class="cards"><div class="mini-card"><span class="muted">Login ID</span><strong>${esc(user.login_id)}</strong></div><div class="mini-card"><span class="muted">Email</span><strong>${esc(user.email)}</strong></div><div class="mini-card"><span class="muted">Role</span><strong>${esc(user.role)}</strong></div></div>` : `<div class="callout">You are browsing in read-only mode. Sign in to create operations and manage your profile.</div><br><button class="button button-dark" data-action="auth">Sign in</button>`}</div></section>`;
 }
 
-function openDialog(mode = "signin") {
-  const dialog = $("#auth-dialog");
-  const signup = mode === "signup";
-  const email = dialog.querySelector("[name=email]");
-  const confirm = dialog.querySelector("[name=confirm_password]");
-  const password = dialog.querySelector("[name=password]");
-  dialog.classList.toggle("auth-signup", signup);
-  $("#auth-title").textContent = signup ? "Create account" : "Sign in";
-  $("#auth-switch").textContent = signup ? "I already have an account" : "Create account";
-  email.required = signup; confirm.required = signup;
-  if (signup) {
-    password.minLength = 8;
-    password.pattern = "(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}";
-    password.title = "Use at least 8 characters with an uppercase letter, number, and special character.";
-    password.autocomplete = "new-password";
-  } else {
-    password.removeAttribute("minlength"); password.removeAttribute("pattern"); password.removeAttribute("title"); password.autocomplete = "current-password";
-  }
-  dialog.dataset.mode = mode; dialog.showModal();
+function openDialog() { $("#auth-dialog").showModal(); }
+
+function openResetDialog() {
+  const dialog = $("#reset-dialog");
+  const fields = $(".reset-code-fields");
+  fields.classList.remove("active");
+  $("#reset-message").textContent = "Request a one-time reset code. It expires after 10 minutes.";
+  $("#request-reset").hidden = false;
+  $("#complete-reset").hidden = true;
+  dialog.showModal();
 }
 
 function formDialog(title, content, submit) { const dialog = document.createElement("dialog"); dialog.className = "modal"; dialog.innerHTML = `<div class="modal-head"><div><div class="eyebrow">NEW RECORD</div><h2>${title}</h2></div><button class="icon-button" data-close-dialog>×</button></div><form class="form-grid">${content}<div class="form-actions"><button type="button" class="button button-quiet" data-close-dialog>Cancel</button><button class="button button-dark">Create</button></div></form>`; document.body.append(dialog); dialog.showModal(); dialog.querySelector("form").addEventListener("submit", async (event) => { event.preventDefault(); try { await submit(new FormData(event.target)); dialog.close(); dialog.remove(); notify(`${title} created`); render(); } catch (error) { notify(error.message, "error"); } }); dialog.addEventListener("close", () => dialog.remove()); }
 
-function openProductForm() { formDialog("New product", `<label>SKU / code<input name="sku" required></label><label>Product name<input name="name" required></label><label>Category<select name="category_id"><option value="">Uncategorised</option>${optionList(state.categories)}</select></label><label>Unit of measure<input name="unit" value="piece"></label><label>Unit cost<input name="unit_cost" type="number" min="0" step="0.01" value="0"></label><label>Reorder level<input name="reorder_level" type="number" min="0" step="0.001" value="0"></label><label class="wide">Description<textarea name="description"></textarea></label>`, async (data) => api("/products", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) })); }
+function openProductForm() { formDialog("New stock item", `<label>SKU / code<input name="sku" required></label><label>Stock item name<input name="name" required></label><label>Category<select name="category_id"><option value="">Uncategorised</option>${optionList(state.categories)}</select></label><label>Unit of measure<input name="unit" value="piece"></label><label>Unit cost<input name="unit_cost" type="number" min="0" step="0.01" value="0"></label><label>Reorder level<input name="reorder_level" type="number" min="0" step="0.001" value="0"></label><label class="wide">Description<textarea name="description"></textarea></label>`, async (data) => api("/products", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) })); }
 function openWarehouseForm() { formDialog("New warehouse", `<label>Warehouse name<input name="name" required></label><label>Short code<input name="short_code" required></label><label class="wide">Address<textarea name="address"></textarea></label>`, async (data) => api("/warehouses", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) })); }
+function openLocationForm() { formDialog("New location", `<label>Location name<input name="name" required></label><label>Short code<input name="short_code" required></label><label class="wide">Warehouse<select name="warehouse_id" required><option value="">Select warehouse</option>${optionList(state.warehouses)}</select></label>`, async (data) => api("/locations", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) })); }
 function openOperationForm(type) {
   const isReceipt = type === "receipts";
   const isDelivery = type === "deliveries";
@@ -165,6 +171,7 @@ document.addEventListener("click", async (event) => {
   if (action === "auth") return openDialog();
   if (action === "new-product") return openProductForm();
   if (action === "new-warehouse") return openWarehouseForm();
+  if (action === "new-location") return openLocationForm();
   if (action === "quick-receipt") return openOperationForm("receipts");
   if (action?.startsWith("new-")) return openOperationForm(action.slice(4));
   if (event.target.closest("[data-close-dialog]")) return event.target.closest("dialog").close();
@@ -172,8 +179,40 @@ document.addEventListener("click", async (event) => {
 });
 
 $("#mobile-menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
-$("#auth-switch").addEventListener("click", () => openDialog($("#auth-dialog").dataset.mode === "signup" ? "signin" : "signup"));
-$("#auth-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = new FormData(event.target); const mode = $("#auth-dialog").dataset.mode; try { if (mode === "signup" && form.get("password") !== form.get("confirm_password")) throw new Error("Passwords do not match"); state.user = await api(mode === "signup" ? "/auth/signup" : "/auth/login", { method: "POST", body: JSON.stringify({ login_id: form.get("login_id"), email: form.get("email"), password: form.get("password") }) }); $("#auth-dialog").close(); loadUser(); render(); notify(mode === "signup" ? "Account created" : "Signed in"); } catch (error) { notify(error.message, "error"); } });
+$("#login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  try {
+    state.user = await api("/auth/login", { method: "POST", body: JSON.stringify({ login_id: form.get("login_id"), password: form.get("password") }) });
+    $("#auth-dialog").close(); loadUser(); render(); notify("Signed in");
+  } catch (error) { notify(error.message, "error"); }
+});
+$("#signup-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  try {
+    if (form.get("password") !== form.get("confirm_password")) throw new Error("Passwords do not match");
+    state.user = await api("/auth/signup", { method: "POST", body: JSON.stringify({ login_id: form.get("login_id"), email: form.get("email"), password: form.get("password") }) });
+    $("#auth-dialog").close(); loadUser(); render(); notify("Account created");
+  } catch (error) { notify(error.message, "error"); }
+});
+$("#forgot-password").addEventListener("click", () => { $("#auth-dialog").close(); openResetDialog(); });
+$("#request-reset").addEventListener("click", async () => {
+  const form = new FormData($("#reset-form"));
+  try {
+    const result = await api("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email: form.get("email") }) });
+    $(".reset-code-fields").classList.add("active"); $("#request-reset").hidden = true; $("#complete-reset").hidden = false;
+    $("#reset-message").textContent = result.development_otp ? `Development reset code: ${result.development_otp}` : result.message;
+  } catch (error) { notify(error.message, "error"); }
+});
+$("#reset-form").addEventListener("submit", async (event) => {
+  event.preventDefault(); const form = new FormData(event.target);
+  try {
+    if (form.get("new_password") !== form.get("confirm_password")) throw new Error("Passwords do not match");
+    await api("/auth/reset-password", { method: "POST", body: JSON.stringify({ email: form.get("email"), otp: form.get("otp"), new_password: form.get("new_password") }) });
+    $("#reset-dialog").close(); openDialog(); notify("Password reset successful. You can now sign in.");
+  } catch (error) { notify(error.message, "error"); }
+});
 $(".user-chip").addEventListener("click", () => openDialog());
 
 loadUser(); render();
