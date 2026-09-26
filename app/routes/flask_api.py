@@ -266,7 +266,19 @@ def list_locations():
     query = select(Location).order_by(Location.name)
     if warehouse_id:
         query = query.where(Location.warehouse_id == warehouse_id)
-    return jsonify(items=[data(item) for item in db().scalars(query).all()])
+    items = []
+    for item in db().scalars(query).all():
+        record = data(item)
+        contact = db().get(User, item.created_by)
+        from_location = db().get(Location, item.from_location_id) if item.from_location_id else None
+        to_location = db().get(Location, item.to_location_id) if item.to_location_id else None
+        record["date"] = item.created_at
+        record["contact"] = contact.login_id if contact else str(item.created_by)
+        record["from"] = from_location.short_code if from_location else "-"
+        record["to"] = to_location.short_code if to_location else "-"
+        record["status"] = item.move_type.value
+        items.append(record)
+    return jsonify(items=items)
 
 
 @api_bp.post("/locations")
@@ -454,7 +466,61 @@ def create_delivery():
 @api_bp.get("/deliveries")
 def list_deliveries():
     query = select(Delivery).order_by(Delivery.id.desc())
-    return jsonify(items=[data(item) for item in db().scalars(query).all()])
+    items = []
+    for item in db().scalars(query).all():
+        record = data(item)
+        warehouse = db().get(Warehouse, item.warehouse_id)
+        contact = db().get(User, item.responsible_id)
+        record["from_warehouse"] = warehouse.short_code if warehouse else "-"
+        record["to_address"] = item.delivery_address or "-"
+        record["contact"] = contact.login_id if contact else str(item.responsible_id)
+        items.append(record)
+    return jsonify(items=items)
+
+
+def delivery_details(delivery: Delivery) -> dict[str, Any]:
+    record = data(delivery)
+    warehouse = db().get(Warehouse, delivery.warehouse_id)
+    responsible = db().get(User, delivery.responsible_id)
+    record["from_warehouse"] = warehouse.short_code if warehouse else "-"
+    record["contact"] = responsible.login_id if responsible else str(delivery.responsible_id)
+    record["items"] = []
+    for line in delivery.items:
+        product = db().get(Product, line.product_id)
+        location = db().get(Location, line.location_id)
+        stock = db().scalar(select(Stock).where(Stock.product_id == line.product_id, Stock.location_id == line.location_id))
+        available = stock.free_to_use if stock else 0
+        record["items"].append({
+            "id": str(line.id),
+            "product_id": str(line.product_id),
+            "product": product.name if product else "-",
+            "sku": product.sku if product else "-",
+            "quantity": line.quantity,
+            "location": location.short_code if location else "-",
+            "available_quantity": available,
+            "insufficient_stock": line.quantity > available,
+        })
+    return record
+
+
+@api_bp.get("/deliveries/<uuid:delivery_id>")
+def get_delivery(delivery_id: UUID):
+    delivery = get_required(Delivery, delivery_id, "Delivery")
+    if not isinstance(delivery, Delivery):
+        return delivery
+    return jsonify(delivery_details(delivery))
+
+
+@api_bp.post("/deliveries/<uuid:delivery_id>/cancel")
+def cancel_delivery(delivery_id: UUID):
+    delivery = get_required(Delivery, delivery_id, "Delivery")
+    if not isinstance(delivery, Delivery):
+        return delivery
+    if delivery.status == DeliveryStatus.DONE:
+        return fail("A delivered order cannot be cancelled", 409)
+    delivery.status = DeliveryStatus.CANCELLED
+    commit()
+    return jsonify(data(delivery))
 
 
 def add_operation_item(operation_model: type, item_model: type, operation_id: UUID, body: dict[str, Any]):
@@ -492,8 +558,19 @@ def mark_ready(model: type, operation_id: UUID):
     operation = get_required(model, operation_id, model.__name__)
     if not isinstance(operation, model):
         return operation
-    if operation.status.name != "DRAFT" or not operation.items:
-        return fail("A DRAFT operation with items is required", 409)
+    if operation.status.name not in ("DRAFT", "WAITING") or not operation.items:
+        return fail("A DRAFT or WAITING operation with items is required", 409)
+    if model is Delivery:
+        has_shortage = False
+        for item in operation.items:
+            stock = db().scalar(select(Stock).where(Stock.product_id == item.product_id, Stock.location_id == item.location_id))
+            if not stock or stock.free_to_use < item.quantity:
+                has_shortage = True
+                break
+        if has_shortage:
+            operation.status = DeliveryStatus.WAITING
+            commit()
+            return jsonify(data(operation))
     operation.status = ReceiptStatus.READY if model is Receipt else DeliveryStatus.READY
     commit()
     return jsonify(data(operation))

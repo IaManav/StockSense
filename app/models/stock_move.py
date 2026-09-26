@@ -1,6 +1,6 @@
 import uuid
 import enum
-from datetime import date
+from datetime import datetime, timezone
 
 from app.database import Base
 from sqlalchemy import (
@@ -75,5 +75,10 @@ class StockMove(Base):
 
     created_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"),
+        nullable=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
